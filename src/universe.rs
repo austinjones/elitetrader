@@ -114,7 +114,7 @@ pub fn load_universe() -> Universe {
 			let threshold = Duration::days(1);
 			
 			if age < threshold {
-				println!("Loading cached file from {}", cachefile_loc );
+				println!("Loading cached file from {} ...", cachefile_loc );
 				io::read_json( cachefile_path )
 			} else {
 				println!("File was modified {} hours ago - refreshing", age.num_hours() );
@@ -193,7 +193,7 @@ pub fn load_universe() -> Universe {
 }
 
 fn recalculate_systems( path: &Path ) -> Vec<System> {
-	println!("The cached data file is stale, or did not exist.  Reloading data from http://eddb.io");
+	println!("The cached data file is stale, or did not exist.  Reloading data from eddb.io ...");
 	
 	println!("Loading commodities.json...");
 	let commodities_json : Vec<CommodityJson> = io::http_read_json(&"http://eddb.io/archive/v3/commodities.json".to_string());
@@ -279,9 +279,10 @@ fn recalculate_systems( path: &Path ) -> Vec<System> {
 		systems.push( *system );
 	}
 	
+	println!("Saving cachefile to {} ...", path.to_str().unwrap() );
 	io::write_json( path, &systems );
 	
-	println!("Cache file saved to {}", path.to_str().unwrap() );
+	
 	
 	return systems;
 }

@@ -15,22 +15,26 @@ extern crate flate2;
 extern crate time;
 extern crate getopts;
 
-mod data;
-mod universe;
 mod analysis;
-mod options;
-mod io;
 mod conversion;
+mod data;
+mod io;
+mod messages;
+mod options;
+mod universe;
 
 mod scored_buf;
 mod map_list;
 
-use getopts::{Options, Matches};
+use std::thread;
 use std::str::FromStr;
+use time::PreciseTime;
+use getopts::{Options, Matches};
 
-use analysis::Analyzer;
+use messages::*;
+use analysis::{Analyzer};
 
-pub const SEPARATOR : &'static str = "------------------------------------------------------------";
+pub const SEPARATOR : &'static str = "-------------------------------------------------------------------";
 pub const CACHE_FILENAME : &'static str = ".elite_universe_min.json";
 
 fn options() -> Options {
@@ -39,15 +43,15 @@ fn options() -> Options {
 	opts.optopt("t", "station", "set current station name", "GitHub");
 	opts.optopt("c", "cargo", "maximum cargo capacity in tons. find this in your right cockpit panel's Cargo tab.", "216");
 	opts.optopt("r", "range", "maximum laden jump range in light years.  find this in your outfitting menu.", "18.52");
+	opts.optopt("b", "balance", "current credit balance", "18.52");
 	opts.optopt("q", "quality", "search quality setting [low|med|high]", "med");
 	
 	opts.optflag("h", "help", "prints this help menu");
 	opts
 }
 
-fn prompt_value( description: &'static str ) -> String {
-	println!( "You can set these options in the command line arguments.  Try the --help flag." );
-	print!( "Please enter the {}: ", description );
+fn prompt_value( flag: &'static str, description: &'static str ) -> String {
+	println!( "Please provide the flag -{}, or enter the {} now: ", flag, description );
 	
 	let mut val = String::new();
 	match std::io::stdin().read_line(&mut val) {
@@ -55,7 +59,7 @@ fn prompt_value( description: &'static str ) -> String {
 		_ => {}
 	};
 	
-	val
+	val.trim().to_string()
 }
 
 enum SearchQuality {
@@ -68,10 +72,10 @@ impl FromStr for SearchQuality {
     type Err = String;
 
     fn from_str(s: &str) -> Result<SearchQuality, String> {
-        match s {
-            "Low" => Ok(SearchQuality::Low),
-            "Med" => Ok(SearchQuality::Med),
-            "High" => Ok(SearchQuality::High),
+        match s.to_lowercase().as_str() {
+            "low" => Ok(SearchQuality::Low),
+            "med" => Ok(SearchQuality::Med),
+            "high" => Ok(SearchQuality::High),
             _ => Err( format!("Unknown enum variant '{}'", s) ),
         }
     }
@@ -80,7 +84,8 @@ impl FromStr for SearchQuality {
 struct Arguments {
 //	pub system: String,
 	pub station: String,
-	pub cargo: u64,
+	pub cargo: u32,
+	pub credit_balance: u32,
 	pub jump_range: f64,
 	pub search_quality: SearchQuality
 }
@@ -90,25 +95,49 @@ impl Arguments {
 //		let system_in = config.opt_str("s")
 //			.unwrap_or( prompt_value( "current system name" ) );
 			
-		let station_in = config.opt_str("t")
-			.unwrap_or( prompt_value( "current station name" ) );
-			
-		let cargo_in = config.opt_str("c")
-			.unwrap_or( prompt_value( "current cargo capacity in tons" ) );
-		let cargo = u64::from_str( cargo_in.as_str() ).unwrap();
+		let station_in = match config.opt_str("t") {
+			Some(t) => t,
+			None => prompt_value( "t", "current station name" )
+		};
 		
-		let jump_range_in = config.opt_str("r")
-			.unwrap_or( prompt_value( "current laden jump range in light years" ) );
-		let jump_range = f64::from_str( jump_range_in.as_str() ).unwrap();
+		let cargo_in = match config.opt_str("c") {
+			Some(v) => v,
+			None => prompt_value( "c", "current cargo capacity in tons" )
+		};
+		let cargo_capacity = match u32::from_str( cargo_in.as_str() ) {
+			Ok(v) => v,
+			Err(reason) => panic!("Invalid cargo capacity '{}' - {}", cargo_in, reason)
+		};
 		
-		let quality_in = config.opt_str("t")
-			.unwrap_or("med".to_string());
-		let quality : SearchQuality = SearchQuality::from_str(quality_in.as_str()).unwrap();
+		let balance_in = match config.opt_str("b") {
+			Some(v) => v,
+			None => prompt_value( "b", "current credit balance" )
+		};
+		let balance = match u32::from_str( balance_in.as_str() ) {
+			Ok(v) => v,
+			Err(reason) => panic!("Invalid balance '{}' - {}", balance_in, reason)
+		};
+		
+		let jump_range_in = match config.opt_str("r") {
+			Some(v) => v,
+			None => prompt_value( "r", "current laden jump range in light years" )
+		};
+		let jump_range = match f64::from_str( jump_range_in.as_str() ) {
+			Ok(v) => v,
+			Err(reason) => panic!("Invalid jump range '{}' - {}", jump_range_in, reason)
+		};
+		
+		let quality_in = config.opt_str("q").unwrap_or( "med".to_string() );
+		let quality : SearchQuality = match SearchQuality::from_str(quality_in.as_str()) {
+			Ok(v) => v,
+			Err(reason) => panic!("Invalid search quality '{}' - {}", quality_in, reason)
+		};
 		
 		Arguments {
 //			system: system_in,
 			station: station_in,
-			cargo: cargo,
+			cargo: cargo_capacity,
+			credit_balance: balance,
 			jump_range: jump_range,
 			search_quality: quality
 		}
@@ -117,11 +146,11 @@ impl Arguments {
 
 fn main() {
 	println!("{}", SEPARATOR );
-	println!("Welcome to Austin's Elite Trading calculator.");
-	println!("See https://github.com/austinjones/elitetrader/ for usage instructions.");
+	println!("Welcome to Austin's Elite Dangerous trading calculator.");
+	println!("Use the -h or --help flags for instructions,\n visit https://github.com/austinjones/elitetrader/");
 	println!("");
 	
-	println!("Thank you to to Paul Heisig and the maintainers of http://eddb.io/ for hosting the data used by this tool!");
+	println!("Thank you to to Paul Heisig and the maintainers of\n http://eddb.io/ for hosting the data used by this tool!");
 	println!("");
 	
 	println!("This software is available under the GNU General Public License:");
@@ -136,16 +165,19 @@ fn main() {
 	};
 	
 	if opt_vals.opt_present( "h" ) {
-		println!( "{}", opts.usage( "Usage: {} [options]\nMissing or invalid properties will be interactively prompted." ) );
+		print!( "{}", HELP_MESSAGE_BEFORE_OPTS );
+		println!( "{}", opts.usage("") );
+		println!( "{}", HELP_MESSAGE_AFTER_OPTS );
 		return;
 	}
 	
 	let arguments = Arguments::collect( &opt_vals );
 	
-	println!("Loading Elite Dangerous universe data.");
+	println!("Loading Elite Dangerous universe data...");
 	println!("");
 	
 	let universe = universe::load_universe();
+	println!("");
 	println!("Universe loaded!");
 	
 	println!("{}", SEPARATOR );
@@ -170,7 +202,7 @@ fn main() {
 		
 		if !station.is_some() {
 			println!( "The station '{}' was not found.", station_name );
-			station_name = prompt_value( "corrected station name" );
+			station_name = prompt_value( "t", "corrected station name" );
 		}
 	}
 	
@@ -178,32 +210,79 @@ fn main() {
 	let system = universe.get_system( &station.system_id ).unwrap();
 	
 	let mut analyzer = Analyzer {
-		jump_range : 18.52,
-		money : 20000,
-		cargo_capacity: 216,
+		jump_range : arguments.jump_range,
+		credit_balance : arguments.credit_balance,
+		cargo_capacity: arguments.cargo,
 		universe: &universe
 	};
 	
-	println!("");
 	
-	println!("Initalization complete. Starting route search from {}.{}", system.system_name, station.station_name );
+	println!("Starting route search from {} [{}] ...", system.system_name, station.station_name );
+	
+	let mut i = 0;
+	let mut last_trade : Option<(u32, f64, PreciseTime)> = None;
 	
 	// depth 0
-	for i in 1..5 {
-		let profit = match analyzer.best_next_trade(&station, 60f64, 6, 5).first() {
+	loop {
+		i += 1;
+		let (width, depth) = match arguments.search_quality {
+			SearchQuality::High => (7, 5),
+			SearchQuality::Med => (6, 5),
+			SearchQuality::Low => (3, 5)
+		};
+		
+		let profit = match analyzer.best_next_trade(&station, 60f64, width, depth).first() {
 			Some(trade) => {
-				let profit_per_min = trade.profit_per_min.unwrap_or(0f64) as usize;
-				let duration_minutes = trade.distance_in_seconds as f64 / 60f64;
-				let new_balance = analyzer.money + trade.profit_total;
+				let expected_profit_per_min = trade.profit_per_min.unwrap_or(0f64);
+				let expected_minutes = trade.distance_in_seconds as f64 / 60f64;
+				let new_balance = analyzer.credit_balance + trade.profit_total;
 				
-				println!("{}", SEPARATOR);
+				// the first trade is from the station the user is docked at
+				// so calculate it automatically
+				if last_trade.is_some() {
+					println!("");
+					println!("wait:\tpress <enter> once trade is complete.");
+					
+					let mut str = String::new();
+					match std::io::stdin().read_line(&mut str) {
+						Err(reason) => panic!("Failed to read line: {}", reason ),
+						_ => {}
+					};
+				}
+				
+				match last_trade {
+					Some((total_profit, expected_min, start_time)) => {
+						let span = start_time.to( PreciseTime::now() );
+						let minutes = span.num_milliseconds() as f64 / 60000f64;
+						
+						let profit_per_min = total_profit as f64 / minutes;
+						let ratio = minutes / expected_min;
+						
+						println!("actual:\t{:.1} per min over {:.1} minutes",
+							profit_per_min, minutes );
+						
+						let compare = match ratio {
+							0f64...1f64 => 100f64 * (1f64-ratio),
+							_ => 100f64 * (ratio-1f64)
+						};
+						println!("\t{:.2}% faster than expected", compare);
+						println!("{}", &SEPARATOR.to_string());
+						
+						// this makes the timer result more visible,
+						// and tricks the user into thinking 
+						// trade calculations take 1 second
+						thread::sleep_ms( 1000 );
+					}, 
+					_ => {}
+				};
+				
 				println!("hop {}:\t{} [{}]", i,
 					trade.buy_system.system_name,
 					trade.buy_station.station_name);
 				
 				println!("");
 				
-				println!("buy:\t{}x {} [in {}]",
+				println!("buy:\t{}x {} [{} category]",
 					trade.used_cargo,
 					trade.commodity_name,
 					trade.sell.commodity.category );
@@ -218,21 +297,22 @@ fn main() {
 					format_credits( new_balance as f64 ) );
 				
 				println!("");
-				
-				println!("stats:\t{} profit/min over {:.1} mins", 
-					format_credits( profit_per_min as f64 ),
-					duration_minutes);
+				println!("expect:\t{} profit/min over {:.1} mins", 
+						format_credits( expected_profit_per_min as f64 ),
+						expected_minutes);
+
 								
-				println!("\t{} profit/ton for {} tons", 
+				println!("\t{} profit/ton for {} tons",
 					format_credits( trade.profit_per_ton as f64 ),
 					trade.used_cargo);
 				
 				println!("\t{:.1} ly to system, {} ls to station, {:.1} min total",
 					trade.distance_to_system,
 					trade.distance_to_station,
-					duration_minutes
+					expected_minutes
 				);
 				
+				last_trade = Some((trade.profit_total, expected_minutes, PreciseTime::now()));
 				station = trade.sell_station.clone();
 				
 				trade.profit_total
@@ -240,7 +320,7 @@ fn main() {
 			None => { println!("No trade found"); break; }
 		};
 		
-		analyzer.money += profit;
+		analyzer.credit_balance += profit;
 	}
 	
 	fn format_credits( credits: f64 ) -> String {

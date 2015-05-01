@@ -15,8 +15,8 @@ use options::{BuyOptions, SellOptions};
 #[derive(Clone)]
 pub struct Analyzer<'a> {
 	pub jump_range : f64,
-	pub money : u32,
-	pub cargo_capacity: u16,
+	pub credit_balance : u32,
+	pub cargo_capacity: u32,
 	pub universe: &'a Universe
 }
 
@@ -315,8 +315,8 @@ impl<'b> Trade<'b> {
 	}
 	
 	fn used_cargo( analyzer: &Analyzer, buy: &Listing ) -> u32 {
-		let possible_cargo = analyzer.money as u32 / buy.buy_price as u32;
-		min( possible_cargo, analyzer.cargo_capacity as u32 )
+		let possible_cargo = analyzer.credit_balance / buy.buy_price as u32;
+		min( possible_cargo, analyzer.cargo_capacity )
 	}
 	
 	fn profit_per_min( buy: &Listing, sell: &Listing, used_cargo: u32, distance_in_seconds: u32  ) -> Option<f64> {
