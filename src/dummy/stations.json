@@ -1,0 +1,282 @@
+[
+    {
+        "id": 1,
+        "name": "Giger Hub",
+        "max_landing_pad_size": "L",
+        "distance_to_star": 100,
+        "has_commodities": 1,
+        "import_commodities": [],
+        "export_commodities": [],
+        "prohibited_commodities": [],
+        "economies": [],
+        "updated_at": 1429408824,
+        "system_id": 1,
+        "listings": [
+            {
+                "id": 1,
+                "station_id": 1,
+                "commodity_id": 5,
+                "supply": 4512,
+                "buy_price": 257,
+                "sell_price": 100,
+                "demand": 0,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 2,
+                "station_id": 1,
+                "commodity_id": 6,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 6852,
+                "demand": 38,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 3,
+                "station_id": 1,
+                "commodity_id": 7,
+                "supply": 512,
+                "buy_price": 534,
+                "sell_price": 515,
+                "demand": 0,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 4,
+                "station_id": 1,
+                "commodity_id": 14,
+                "supply": 513,
+                "buy_price": 1477,
+                "sell_price": 1451,
+                "demand": 139,
+                "collected_at": 1429359632,
+                "update_count": 2
+            },
+            {
+                "id": 5,
+                "station_id": 1,
+                "commodity_id": 15,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 1431,
+                "demand": 375,
+                "collected_at": 1429359632,
+                "update_count": 2
+            }
+        ]
+    },
+    {
+        "id": 2,
+        "name": "Sys1 Station B",
+        "max_landing_pad_size": "L",
+        "distance_to_star": 52,
+        "has_commodities": 1,
+        "import_commodities": [],
+        "export_commodities": [],
+        "prohibited_commodities": [],
+        "economies": [],
+        "updated_at": 1429408824,
+        "system_id": 1,
+        "listings": [
+            {
+                "id": 1,
+                "station_id": 2,
+                "commodity_id": 5,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 1000,
+                "demand": 1137,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 2,
+                "station_id": 2,
+                "commodity_id": 6,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 6852,
+                "demand": 38,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 3,
+                "station_id": 2,
+                "commodity_id": 7,
+                "supply": 1257,
+                "buy_price": 355,
+                "sell_price": 325,
+                "demand": 0,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 4,
+                "station_id": 2,
+                "commodity_id": 14,
+                "supply": 139,
+                "buy_price": 1421,
+                "sell_price": 1451,
+                "demand": 0,
+                "collected_at": 1429359632,
+                "update_count": 2
+            },
+            {
+                "id": 5,
+                "station_id": 2,
+                "commodity_id": 15,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 1531,
+                "demand": 375,
+                "collected_at": 1429359632,
+                "update_count": 2
+            }
+        ]
+    },
+    {
+        "id": 11,
+        "name": "Sys2 Station A",
+        "max_landing_pad_size": "L",
+        "distance_to_star": 11,
+        "has_commodities": 1,
+        "import_commodities": [],
+        "export_commodities": [],
+        "prohibited_commodities": [],
+        "economies": [],
+        "updated_at": 1429408824,
+        "system_id": 2,
+        "listings": [
+            {
+                "id": 1,
+                "station_id": 11,
+                "commodity_id": 5,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 378,
+                "demand": 1137,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 2,
+                "station_id": 11,
+                "commodity_id": 6,
+                "supply": 25512,
+                "buy_price": 3512,
+                "sell_price": 3496,
+                "demand": 0,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 3,
+                "station_id": 11,
+                "commodity_id": 7,
+                "supply": 41225,
+                "buy_price": 115,
+                "sell_price": 110,
+                "demand": 0,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 4,
+                "station_id": 11,
+                "commodity_id": 14,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 1925,
+                "demand": 22512,
+                "collected_at": 1429359632,
+                "update_count": 2
+            },
+            {
+                "id": 5,
+                "station_id": 11,
+                "commodity_id": 15,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 1731,
+                "demand": 1025,
+                "collected_at": 1429359632,
+                "update_count": 2
+            }
+        ]
+    },
+    {
+        "id": 31,
+        "name": "Sys3 Station A",
+        "max_landing_pad_size": "M",
+        "distance_to_star": 35,
+        "has_commodities": 1,
+        "import_commodities": [],
+        "export_commodities": [],
+        "prohibited_commodities": [],
+        "economies": [],
+        "updated_at": 1429408824,
+        "system_id": 3,
+        "listings": [
+            {
+                "id": 1,
+                "station_id": 31,
+                "commodity_id": 5,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 378,
+                "demand": 1137,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 2,
+                "station_id": 31,
+                "commodity_id": 6,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 6882,
+                "demand": 38,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 3,
+                "station_id": 31,
+                "commodity_id": 7,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 534,
+                "demand": 318,
+                "collected_at": 1429359631,
+                "update_count": 2
+            },
+            {
+                "id": 4,
+                "station_id": 12,
+                "commodity_id": 14,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 1451,
+                "demand": 139,
+                "collected_at": 1429359632,
+                "update_count": 2
+            },
+            {
+                "id": 5,
+                "station_id": 31,
+                "commodity_id": 15,
+                "supply": 0,
+                "buy_price": 0,
+                "sell_price": 1431,
+                "demand": 375,
+                "collected_at": 1429359632,
+                "update_count": 2
+            }
+        ]
+    }
+]

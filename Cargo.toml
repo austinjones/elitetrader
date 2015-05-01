@@ -1,0 +1,19 @@
+[package]
+
+name = "elitetrader"
+version = "0.0.1"
+authors = [ "Austin Jones <austinbaysjones@gmail.com>" ]
+
+[dependencies]
+rand = "0.3.8"
+time = "0.1.25"
+getopts = "0.2.10"
+
+hyper = "0.3.15"
+flate2 = "0.2.7"
+
+rustc-serialize = "0.3"
+spatial = { git = "https://github.com/austinjones/spatial.git" }
+
+[[bin]]
+name = "elite_trader"
