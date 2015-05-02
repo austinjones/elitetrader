@@ -1,4 +1,5 @@
 use spatial::octree::Index;
+use std::str::FromStr;
 
 pub trait Identified<K> {
 	fn to_id(&self) -> K;
@@ -11,7 +12,7 @@ pub struct System {
 	pub x: f64,
 	pub y: f64,
 	pub z: f64,
-	pub stations: Box<Vec<Station>>
+	pub stations: Vec<Station>
 //	faction: Option<String>,
 //	population: Option<u64>,
 //	government: Option<String>,
@@ -60,9 +61,10 @@ pub struct Station {
 	pub system_id: u16,
 	pub station_id: u32,
 	pub station_name: String,
-	pub max_landing_pad_size: Option<String>,
+	pub max_landing_pad_size: ShipSize,
 	pub distance_to_star: Option<u32>,
-	pub listings: Vec<Listing>
+	pub listings: Vec<Listing>,
+	pub prohibited_commodities: Vec<u8>
 //	faction: Option<String>,
 //	government: Option<String>,
 //	allegiance: Option<String>,
@@ -74,7 +76,6 @@ pub struct Station {
 //	has_shipyard: Option<u8>,
 //	import_commodities: Box<Vec<String>>,
 //	export_commodities: Box<Vec<String>>,
-//	prohibited_commodities: Box<Vec<String>>,
 //	economies: Box<Vec<String>>,
 //	updated_at: u32,
 }
@@ -125,6 +126,31 @@ impl Identified<u8> for Commodity {
 	fn to_id(&self) -> u8 {
 		self.commodity_id
 	}
+}
+
+#[derive(RustcEncodable, RustcDecodable, Debug, Clone)]
+#[derive(PartialEq, PartialOrd)]
+pub enum ShipSize {
+	Small,
+	Medium,
+	Large
+}
+
+impl FromStr for ShipSize {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<ShipSize, String> {
+        match s.to_lowercase().as_str() {
+            "small" => Ok(ShipSize::Small),
+            "medium" => Ok(ShipSize::Medium),
+            "large" => Ok(ShipSize::Large),
+            "med" => Ok(ShipSize::Medium),
+            "s" => Ok(ShipSize::Small),
+            "m" => Ok(ShipSize::Medium),
+            "l" => Ok(ShipSize::Large),
+            _ => Err( format!("Unknown enum variant '{}'", s) ),
+        }
+    }
 }
 
 //pub fn write_json<T: rustc_serialize::Encodable>( path: &Path, data: &T ) {

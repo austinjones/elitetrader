@@ -1,12 +1,14 @@
 [package]
 
 name = "elitetrader"
-version = "0.0.1"
+version = "0.1.0"
 authors = [ "Austin Jones <austinbaysjones@gmail.com>" ]
 
 [dependencies]
 rand = "0.3.8"
 time = "0.1.25"
+num = "0.1.24"
+
 getopts = "0.2.10"
 
 hyper = "0.3.15"

@@ -14,6 +14,7 @@ extern crate hyper;
 extern crate flate2;
 extern crate time;
 extern crate getopts;
+extern crate num;
 
 mod analysis;
 mod conversion;
@@ -23,6 +24,7 @@ mod messages;
 mod options;
 mod universe;
 
+mod num_unit;
 mod scored_buf;
 mod map_list;
 
@@ -31,20 +33,25 @@ use std::str::FromStr;
 use time::PreciseTime;
 use getopts::{Options, Matches};
 
+use num_unit::*;
 use messages::*;
-use analysis::{Analyzer};
+use analysis::{Analyzer, SearchQuality};
+use data::ShipSize;
 
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 pub const SEPARATOR : &'static str = "-------------------------------------------------------------------";
-pub const CACHE_FILENAME : &'static str = ".elite_universe_min.json";
+pub const CACHE_FILENAME : &'static str = concat!(".elite_universe_", env!("CARGO_PKG_VERSION"), ".min.json");
 
 fn options() -> Options {
 	let mut opts = Options::new();
 //	opts.optopt("s", "system", "set current system name", "LTT 826");
-	opts.optopt("t", "station", "set current station name", "GitHub");
+	opts.optopt("t", "station", "current station name", "GitHub");
 	opts.optopt("c", "cargo", "maximum cargo capacity in tons. find this in your right cockpit panel's Cargo tab.", "216");
 	opts.optopt("r", "range", "maximum laden jump range in light years.  find this in your outfitting menu.", "18.52");
-	opts.optopt("b", "balance", "current credit balance", "18.52");
+	opts.optopt("b", "balance", "current credit balance", "525.4k");
+	opts.optopt("m", "minbalance", "minimum credit balance - safety net for rebuy", "3.5m");
 	opts.optopt("q", "quality", "search quality setting [low|med|high]", "med");
+	opts.optopt("p", "shipsize", "current ship size (small|med|large)", "large");
 	
 	opts.optflag("h", "help", "prints this help menu");
 	opts
@@ -59,26 +66,9 @@ fn prompt_value( flag: &'static str, description: &'static str ) -> String {
 		_ => {}
 	};
 	
+	println!("");
+	
 	val.trim().to_string()
-}
-
-enum SearchQuality {
-	Low,
-	Med,
-	High
-}
-
-impl FromStr for SearchQuality {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<SearchQuality, String> {
-        match s.to_lowercase().as_str() {
-            "low" => Ok(SearchQuality::Low),
-            "med" => Ok(SearchQuality::Med),
-            "high" => Ok(SearchQuality::High),
-            _ => Err( format!("Unknown enum variant '{}'", s) ),
-        }
-    }
 }
 
 struct Arguments {
@@ -86,46 +76,75 @@ struct Arguments {
 	pub station: String,
 	pub cargo: u32,
 	pub credit_balance: u32,
+	pub minimum_balance: u32,
 	pub jump_range: f64,
+	pub ship_size: ShipSize,
 	pub search_quality: SearchQuality
 }
+
+
 
 impl Arguments {
 	pub fn collect( config: &Matches ) -> Arguments {
 //		let system_in = config.opt_str("s")
 //			.unwrap_or( prompt_value( "current system name" ) );
 			
+		
 		let station_in = match config.opt_str("t") {
 			Some(t) => t,
-			None => prompt_value( "t", "current station name" )
+			None => prompt_value( "t", "current station name (e.g. Git Hub)" )
 		};
+		
 		
 		let cargo_in = match config.opt_str("c") {
 			Some(v) => v,
-			None => prompt_value( "c", "current cargo capacity in tons" )
+			None => prompt_value( "c", "current cargo capacity in tons (e.g. 216)" )
 		};
-		let cargo_capacity = match u32::from_str( cargo_in.as_str() ) {
-			Ok(v) => v,
+		let cargo_capacity = match NumericUnit::from_str( cargo_in.as_str() ) {
+			Ok(v) => v.to_num(),
 			Err(reason) => panic!("Invalid cargo capacity '{}' - {}", cargo_in, reason)
 		};
 		
+		
 		let balance_in = match config.opt_str("b") {
 			Some(v) => v,
-			None => prompt_value( "b", "current credit balance" )
+			None => prompt_value( "b", "current credit balance (e.g. 525.4k or 525412)" )
 		};
-		let balance = match u32::from_str( balance_in.as_str() ) {
-			Ok(v) => v,
+		let balance = match NumericUnit::from_str( balance_in.as_str() ) {
+			Ok(v) => v.to_num(),
 			Err(reason) => panic!("Invalid balance '{}' - {}", balance_in, reason)
 		};
+		
+		
+		let minimum_balance_in = match config.opt_str("m") {
+			Some(v) => v,
+			None => prompt_value( "b", "minimum credit balance - saftey net for rebuy (e.g. 3.2m)" )
+		};
+		let minimum_balance = match NumericUnit::from_str( minimum_balance_in.as_str() ) {
+			Ok(v) => v.to_num(),
+			Err(reason) => panic!("Invalid minimum balance '{}' - {}", minimum_balance_in, reason)
+		};
+		
 		
 		let jump_range_in = match config.opt_str("r") {
 			Some(v) => v,
 			None => prompt_value( "r", "current laden jump range in light years" )
 		};
-		let jump_range = match f64::from_str( jump_range_in.as_str() ) {
-			Ok(v) => v,
+		let jump_range = match NumericUnit::from_str( jump_range_in.as_str() ) {
+			Ok(v) => v.to_num(),
 			Err(reason) => panic!("Invalid jump range '{}' - {}", jump_range_in, reason)
 		};
+		
+		
+		let ship_size_in = match config.opt_str("p") {
+			Some(v) => v,
+			None => prompt_value( "r", "current ship size [small|med|large], or [s|m|l]" )
+		};
+		let ship_size = match ShipSize::from_str( ship_size_in.as_str() ) {
+			Ok(v) => v,
+			Err(reason) => panic!("Invalid ship size '{}' - {}", ship_size_in, reason)
+		};
+		
 		
 		let quality_in = config.opt_str("q").unwrap_or( "med".to_string() );
 		let quality : SearchQuality = match SearchQuality::from_str(quality_in.as_str()) {
@@ -133,12 +152,15 @@ impl Arguments {
 			Err(reason) => panic!("Invalid search quality '{}' - {}", quality_in, reason)
 		};
 		
+		
 		Arguments {
 //			system: system_in,
 			station: station_in,
 			cargo: cargo_capacity,
 			credit_balance: balance,
 			jump_range: jump_range,
+			minimum_balance: minimum_balance,
+			ship_size: ship_size,
 			search_quality: quality
 		}
 	}
@@ -146,14 +168,14 @@ impl Arguments {
 
 fn main() {
 	println!("{}", SEPARATOR );
-	println!("Welcome to Austin's Elite Dangerous trading calculator.");
+	println!("Welcome to Austin's Elite Dangerous trading calculator v{}", VERSION);
 	println!("Use the -h or --help flags for instructions,\n visit https://github.com/austinjones/elitetrader/");
 	println!("");
 	
 	println!("Thank you to to Paul Heisig and the maintainers of\n http://eddb.io/ for hosting the data used by this tool!");
 	println!("");
 	
-	println!("This software is available under the GNU General Public License:");
+	println!("This software is distributed under the GNU General Public License:");
 	println!("https://www.gnu.org/copyleft/gpl.html");
 	
 	println!("{}", SEPARATOR );
@@ -176,7 +198,7 @@ fn main() {
 	println!("Loading Elite Dangerous universe data...");
 	println!("");
 	
-	let universe = universe::load_universe();
+	let universe = universe::load_universe(&arguments.ship_size);
 	println!("");
 	println!("Universe loaded!");
 	
@@ -210,8 +232,9 @@ fn main() {
 	let system = universe.get_system( &station.system_id ).unwrap();
 	
 	let mut analyzer = Analyzer {
-		jump_range : arguments.jump_range,
-		credit_balance : arguments.credit_balance,
+		jump_range: arguments.jump_range,
+		credit_balance: arguments.credit_balance,
+		minimum_balance: arguments.minimum_balance,
 		cargo_capacity: arguments.cargo,
 		universe: &universe
 	};
@@ -227,7 +250,7 @@ fn main() {
 		i += 1;
 		let (width, depth) = match arguments.search_quality {
 			SearchQuality::High => (7, 5),
-			SearchQuality::Med => (6, 5),
+			SearchQuality::Medium => (6, 5),
 			SearchQuality::Low => (3, 5)
 		};
 		
@@ -258,8 +281,9 @@ fn main() {
 						let profit_per_min = total_profit as f64 / minutes;
 						let ratio = minutes / expected_min;
 						
-						println!("actual:\t{:.1} per min over {:.1} minutes",
-							profit_per_min, minutes );
+						println!("actual:\t{} per min over {:.1} minutes",
+							NumericUnit::new_string( profit_per_min, &"cr".to_string()),
+							minutes );
 						
 						let compare = match ratio {
 							0f64...1f64 => 100f64 * (1f64-ratio),
@@ -282,7 +306,7 @@ fn main() {
 				
 				println!("");
 				
-				println!("buy:\t{}x {} [{} category]",
+				println!("buy:\t{}x {} [{}]",
 					trade.used_cargo,
 					trade.commodity_name,
 					trade.sell.commodity.category );
@@ -293,17 +317,17 @@ fn main() {
 				);
 				
 				println!("\t{} profit for balance {}",
-					format_credits( trade.profit_total as f64 ),
-					format_credits( new_balance as f64 ) );
+					NumericUnit::from( trade.profit_total ).to_string(&"cr".to_string()),
+					NumericUnit::from( new_balance ).to_string(&"cr".to_string()) );
 				
 				println!("");
 				println!("expect:\t{} profit/min over {:.1} mins", 
-						format_credits( expected_profit_per_min as f64 ),
+						NumericUnit::from( expected_profit_per_min ).to_string(&"cr".to_string()),
 						expected_minutes);
 
 								
 				println!("\t{} profit/ton for {} tons",
-					format_credits( trade.profit_per_ton as f64 ),
+					NumericUnit::from( trade.profit_per_ton ).to_string(&"cr".to_string()),
 					trade.used_cargo);
 				
 				println!("\t{:.1} ly to system, {} ls to station, {:.1} min total",
@@ -321,20 +345,5 @@ fn main() {
 		};
 		
 		analyzer.credit_balance += profit;
-	}
-	
-	fn format_credits( credits: f64 ) -> String {
-		let qualifiers = ["cr", "Kcr", "Mcr", "Bcr", "Tcr"];
-		
-		let float = credits as f64;
-		let log_factor = 1000f64;
-		
-		let base = float.log(log_factor).floor();
-		let significand = float / log_factor.powf(base);
-		
-		let index = base as usize;
-		let precision = std::cmp::min( index, 3 );
-		
-		format!("{:.*} {}", precision, significand, qualifiers[index] )
 	}
 }

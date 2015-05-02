@@ -6,16 +6,17 @@ use std::fmt::Formatter;
 use std::fmt::Error;
 use std::cmp::min;
 use std::collections::LinkedList;
-use scored_buf::{ScoredCircularBuffer, Sort};
+use std::str::FromStr;
 
 use universe::Universe;
 use data::*;
 use options::{BuyOptions, SellOptions};
+use scored_buf::{ScoredCircularBuffer, Sort};
 
-#[derive(Clone)]
 pub struct Analyzer<'a> {
-	pub jump_range : f64,
-	pub credit_balance : u32,
+	pub jump_range: f64,
+	pub credit_balance: u32,
+	pub minimum_balance: u32,
 	pub cargo_capacity: u32,
 	pub universe: &'a Universe
 }
@@ -134,6 +135,11 @@ impl<'a> Analyzer<'a> {
 					continue;
 				}
 				
+				let sell_station = self.universe.get_station( &sell.station_id ).unwrap();
+				if Trade::is_prohibited( &buy.commodity, &sell_station ) {
+					continue;
+				}
+				
 				let trade = Trade::new(self, &buy, *sell);
 				let score = trade.score().unwrap_or(0f64);
 				
@@ -222,6 +228,29 @@ impl<'a> Analyzer<'a> {
 	}
 }
 
+pub enum SearchQuality {
+	Low,
+	Medium,
+	High
+}
+
+impl FromStr for SearchQuality {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<SearchQuality, String> {
+        match s.to_lowercase().as_str() {
+            "low" => Ok(SearchQuality::Low),
+            "med" => Ok(SearchQuality::Medium),
+            "high" => Ok(SearchQuality::High),
+            "medium" => Ok(SearchQuality::Medium),
+            "l" => Ok(SearchQuality::Low),
+            "m" => Ok(SearchQuality::Medium),
+            "h" => Ok(SearchQuality::High),
+            _ => Err( format!("Unknown enum variant '{}'", s) ),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Trade<'a> {
 	pub commodity_name: String,
@@ -235,7 +264,9 @@ pub struct Trade<'a> {
 	
 	pub buy_price: u16,
 	pub sell_price: u16,
+	
 	pub is_valid: bool,
+	pub is_prohibited: bool,
 	
 	pub used_cargo: u32,
 	pub profit_total: u32,
@@ -281,7 +312,9 @@ impl<'b> Trade<'b> {
 			
 			buy_price: buy.buy_price,
 			sell_price: sell.sell_price,
+			
 			is_valid: Trade::is_valid( &buy, &sell, used_cargo ),
+			is_prohibited: Trade::is_prohibited( &buy.commodity, &sell_station ),
 			
 			used_cargo: used_cargo,
 			profit_total: profit_total,
@@ -314,8 +347,12 @@ impl<'b> Trade<'b> {
 			&& buy.commodity == sell.commodity
 	}
 	
+	fn is_prohibited( commodity: &Commodity, sell_station: &Station ) -> bool {
+		sell_station.prohibited_commodities.contains( &commodity.commodity_id )
+	}
+	
 	fn used_cargo( analyzer: &Analyzer, buy: &Listing ) -> u32 {
-		let possible_cargo = analyzer.credit_balance / buy.buy_price as u32;
+		let possible_cargo = (analyzer.credit_balance - analyzer.minimum_balance) / buy.buy_price as u32;
 		min( possible_cargo, analyzer.cargo_capacity )
 	}
 	
@@ -431,5 +468,11 @@ impl<'b> TradeRoute<'b> {
 		self.hops.iter()
 			.map(|e| e.is_valid )
 			.fold(true, |a,b| a && b )
+	}
+		
+	pub fn is_prohibited( &self ) -> bool {
+		self.hops.iter()
+			.map(|e| e.is_prohibited )
+			.fold(true, |a,b| a || b )
 	}
 }

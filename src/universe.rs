@@ -16,15 +16,16 @@ use io;
 use data::*;
 use conversion;
 use conversion::*;
+use std::str::FromStr;
 
 use CACHE_FILENAME;
 
-use map_list::MapList;
+//use map_list::MapList;
 
 pub struct Universe {
 	// lookups for high-performance access
 	pub systems: HashMap<u16, System>,
-	pub systems_by_name: HashMap<String, System>,
+//	pub systems_by_name: HashMap<String, System>,
 	
 	// 3D spatial lookup.  SO COOL.
 	pub octree: Octree<f64, System>,
@@ -34,19 +35,18 @@ pub struct Universe {
 	pub stations_by_name: HashMap<String, Station>,
 	
 	// not sure what these are good for
-	pub listings_by_system: MapList<u16, Listing>,
-	pub listings_by_station: MapList<u32, Listing>
+//	pub listings_by_system: MapList<u16, Listing>,
+//	pub listings_by_station: MapList<u32, Listing>
 }
 
-#[allow(dead_code)]
 impl Universe {
 	pub fn get_system( &self, id: &u16 ) -> Option<&System> {
 		self.systems.get( &id )
 	}
 	
-	pub fn get_system_by_name( &self, system_name: &String ) -> Option<&System> {
-		self.systems_by_name.get( &system_name.to_lowercase() )
-	}
+//	pub fn get_system_by_name( &self, system_name: &String ) -> Option<&System> {
+//		self.systems_by_name.get( &system_name.to_lowercase() )
+//	}
 	
 	pub fn get_station( &self, id: &u32 ) -> Option<&Station> {
 		self.stations.get( &id )
@@ -56,13 +56,13 @@ impl Universe {
 		self.stations_by_name.get( &station_name.to_lowercase() )
 	}
 	
-	pub fn get_listings_in_system( &self, id: &u16 ) -> Option<&Vec<Listing>> {
-		self.listings_by_system.get( &id )
-	}
-	
-	pub fn get_listings_in_station( &self, id: &u32 ) -> Option<&Vec<Listing>> {
-		self.listings_by_station.get( &id )
-	}
+//	pub fn get_listings_in_system( &self, id: &u16 ) -> Option<&Vec<Listing>> {
+//		self.listings_by_system.get( &id )
+//	}
+//	
+//	pub fn get_listings_in_station( &self, id: &u32 ) -> Option<&Vec<Listing>> {
+//		self.listings_by_station.get( &id )
+//	}
 	
 	pub fn get_systems_in_range<'x>( &'x self, system: &System, range: f64 ) -> Vec<&'x System> {
 		self.octree.get_in_radius( system.octree_index(), range )
@@ -90,11 +90,11 @@ fn get_cachefile_loc() -> String {
 	}
 }
 
-pub fn load_universe() -> Universe {
+pub fn load_universe(ship_size: &ShipSize) -> Universe {
 	let cachefile_loc = get_cachefile_loc();
 	let cachefile_path = Path::new( &cachefile_loc );
 	
-	let systems = match cachefile_path.exists() {
+	let mut systems = match cachefile_path.exists() {
 		true => {
 			let file = match File::open(&cachefile_loc) {
 				Ok(f) => f,
@@ -126,32 +126,30 @@ pub fn load_universe() -> Universe {
 		}
 	};
 	
+	filter_systems( &mut systems, ship_size );
+	
 	println!( "Found {} systems in cachefile.  Generating indexes...", systems.len() );
 	
-//	println!( "Generating systems map..." );
 	let mut systems_map = HashMap::new();
 	for system in systems.clone() {
 		systems_map.insert( system.to_id(), system );
 	}	
 		
-//	println!( "Generting system_name map" );
-	let mut system_name_map = HashMap::new();
-	for system in systems.clone() {
-		system_name_map.insert( system.system_name.to_lowercase(), system );
-	}	
+//	let mut system_name_map = HashMap::new();
+//	for system in systems.clone() {
+//		system_name_map.insert( system.system_name.to_lowercase(), system );
+//	}	
 	
-//	println!( "Generting listings by system" );
-	let mut listings_by_system = MapList::new();
-	for mut system in systems.clone() {
-		let system_id = system.to_id();
-		for mut station in system.stations.drain() {
-			for listing in station.listings.drain() {
-				listings_by_system.insert( system_id.clone(), listing );
-			}
-		}
-	}
+//	let mut listings_by_system = MapList::new();
+//	for mut system in systems.clone() {
+//		let system_id = system.to_id();
+//		for mut station in system.stations.drain() {
+//			for listing in station.listings.drain() {
+//				listings_by_system.insert( system_id.clone(), listing );
+//			}
+//		}
+//	}
 	
-//	println!( "Generating stations map..." );
 	let mut stations_map = HashMap::new();
 	for mut system in systems.clone() {
 		for station in system.stations.drain() {
@@ -159,7 +157,6 @@ pub fn load_universe() -> Universe {
 		}
 	}
 	
-//	println!( "Generting station_name map" );
 	let mut station_name_map = HashMap::new();
 	for mut system in systems.clone() {
 		for station in system.stations.drain() {
@@ -167,27 +164,25 @@ pub fn load_universe() -> Universe {
 		}	
 	}
 	
-//	println!( "Generating listings by station..." );
-	let mut listings_by_station = MapList::new();
-	for mut system in systems.clone() {
-		for mut station in system.stations.drain() {
-			let station_id = station.to_id();
-			for listing in station.listings.drain() {
-				listings_by_station.insert( station_id.clone(), listing );
-			}
-		}
-	}
+//	let mut listings_by_station = MapList::new();
+//	for mut system in systems.clone() {
+//		for mut station in system.stations.drain() {
+//			let station_id = station.to_id();
+//			for listing in station.listings.drain() {
+//				listings_by_station.insert( station_id.clone(), listing );
+//			}
+//		}
+//	}
 	
-//	println!( "Generating octree..." );
 	let octree = get_octree( systems );
 	
 	Universe {
 		systems: systems_map,
-		systems_by_name: system_name_map,
+//		systems_by_name: system_name_map,
 		stations: stations_map,
 		stations_by_name: station_name_map,
-		listings_by_system: listings_by_system,
-		listings_by_station: listings_by_station,
+//		listings_by_system: listings_by_system,
+//		listings_by_station: listings_by_station,
 		octree: octree 
 	}
 }
@@ -222,7 +217,7 @@ fn recalculate_systems( path: &Path ) -> Vec<System> {
 		
 		commodities_by_id.insert( commodity_json.id, *commodity.clone() );
 		// this is the lowercase string-name value
-		commodities_by_name.insert( commodity.to_id(), *commodity );
+		commodities_by_name.insert( commodity.commodity_name.to_lowercase(), *commodity );
 	}
 //	println!("Calculating systems");
 	//let mut systems_map = HashMap::new();
@@ -238,20 +233,40 @@ fn recalculate_systems( path: &Path ) -> Vec<System> {
 			x: system_json.x,
 			y: system_json.y,
 			z: system_json.z,
-			stations: Box::new(Vec::new())
+			stations: Vec::new()
 		});
 		
 		match stations_by_system.get( &system_json.id ) {
 			Some( stations_jsons ) => {
 				for station_json in stations_jsons {
 					let station_id = station_json.id;
+					
+					let mut prohibited_commodities = Vec::new();
+					for commodity_name in &station_json.prohibited_commodities {
+						let commodity = match commodities_by_name.get( &commodity_name.to_lowercase() ) {
+							Some(c) => c,
+							None => panic!("Unknown commodity '{}' in prohibited listing for station '{}'",
+								commodity_name, station_json.name )
+						};
+						
+						prohibited_commodities.push( commodity.commodity_id );
+					}
+					
+					let ship_size_in = station_json.max_landing_pad_size.clone().unwrap_or("S".to_string());
+					let ship_size = match ShipSize::from_str(ship_size_in.as_str()) {
+						Ok(v) => v,
+						Err(reason) => panic!("Unknown ship size '{}' for station '{}': {}", 
+							ship_size_in, station_json.name, reason )
+					};
+					
 					let mut station = Box::new(Station {
 						system_id: system_id,
 						station_id: station_id,
 						station_name: station_json.name.clone(),
-						max_landing_pad_size: station_json.max_landing_pad_size.clone(),
+						max_landing_pad_size: ship_size,
 						distance_to_star: station_json.distance_to_star,
-						listings: Vec::new()
+						listings: Vec::new(),
+						prohibited_commodities: prohibited_commodities
 					});
 					
 					for listing_json in &station_json.listings {
@@ -261,9 +276,14 @@ fn recalculate_systems( path: &Path ) -> Vec<System> {
 							system_id: system_id,
 							station_id: station_id,
 							commodity: commodity,
-							supply: listing_json.supply,
-							buy_price: listing_json.buy_price,
-							sell_price: listing_json.sell_price
+							supply: match listing_json.supply > 0 
+										{ true => listing_json.supply as u32, _ => 0 },
+										
+							buy_price: match listing_json.buy_price > 0 
+										{ true => listing_json.buy_price as u16 , _ => 0 },
+										
+							sell_price:  match listing_json.sell_price > 0 
+										{ true => listing_json.sell_price as u16 , _ => 0 }
 						};
 						
 						station.listings.push( listing );
@@ -282,7 +302,15 @@ fn recalculate_systems( path: &Path ) -> Vec<System> {
 	println!("Saving cachefile to {} ...", path.to_str().unwrap() );
 	io::write_json( path, &systems );
 	
-	
-	
 	return systems;
+}
+
+fn filter_systems( systems: &mut Vec<System>, ship_size: &ShipSize ) {
+	for mut system in systems {
+		let new_stations = system.stations.drain()
+			.filter(|e| e.max_landing_pad_size >= *ship_size )
+			.collect();
+		
+		system.stations = new_stations;
+	}
 }
