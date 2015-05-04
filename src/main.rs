@@ -5,6 +5,7 @@
 #![feature(path_ext)]
 #![feature(std_misc)]
 #![feature(fs_time)]
+#![feature(scoped)]
 
 extern crate rustc_serialize;
 extern crate spatial;
@@ -16,27 +17,26 @@ extern crate time;
 extern crate getopts;
 extern crate num;
 
-mod analysis;
-mod conversion;
 mod data;
 mod io;
 mod messages;
-mod options;
-mod universe;
+mod search;
+mod util;
 
-mod num_unit;
-mod scored_buf;
-mod map_list;
 
+use data::Universe;
 use std::thread;
 use std::str::FromStr;
 use time::PreciseTime;
 use getopts::{Options, Matches};
 
-use num_unit::*;
+use search::SearchStation;
+use search::PlayerState;
+use search::SearchQuality;
+use util::num_unit::*;
 use messages::*;
-use analysis::{Analyzer, SearchQuality};
-use data::ShipSize;
+use data::trader::ShipSize;
+use data::PriceUpdate;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 pub const SEPARATOR : &'static str = "-------------------------------------------------------------------";
@@ -52,6 +52,7 @@ fn options() -> Options {
 	opts.optopt("m", "minbalance", "minimum credit balance - safety net for rebuy", "3.5m");
 	opts.optopt("q", "quality", "search quality setting [low|med|high]", "med");
 	opts.optopt("p", "shipsize", "current ship size (small|med|large)", "large");
+	opts.optopt("d", "debug", "searches to the given hop length and prints stats", "12");
 	
 	opts.optflag("h", "help", "prints this help menu");
 	opts
@@ -60,15 +61,11 @@ fn options() -> Options {
 fn prompt_value( flag: &'static str, description: &'static str ) -> String {
 	println!( "Please provide the flag -{}, or enter the {} now: ", flag, description );
 	
-	let mut val = String::new();
-	match std::io::stdin().read_line(&mut val) {
-		Err(reason) => panic!("Failed to read line: {}", reason ),
-		_ => {}
-	};
+	let val = read_line();
 	
 	println!("");
 	
-	val.trim().to_string()
+	val
 }
 
 struct Arguments {
@@ -82,13 +79,19 @@ struct Arguments {
 	pub search_quality: SearchQuality
 }
 
-
+fn read_line() -> String {
+	let mut str = String::new();
+	match std::io::stdin().read_line(&mut str) {
+		Err(reason) => panic!("Failed to read line: {}", reason ),
+		_ => {}
+	};
+	str.trim().to_string()
+}
 
 impl Arguments {
 	pub fn collect( config: &Matches ) -> Arguments {
 //		let system_in = config.opt_str("s")
 //			.unwrap_or( prompt_value( "current system name" ) );
-			
 		
 		let station_in = match config.opt_str("t") {
 			Some(t) => t,
@@ -146,7 +149,7 @@ impl Arguments {
 		};
 		
 		
-		let quality_in = config.opt_str("q").unwrap_or( "med".to_string() );
+		let quality_in = config.opt_str("q").unwrap_or( "high".to_string() );
 		let quality : SearchQuality = match SearchQuality::from_str(quality_in.as_str()) {
 			Ok(v) => v,
 			Err(reason) => panic!("Invalid search quality '{}' - {}", quality_in, reason)
@@ -193,16 +196,12 @@ fn main() {
 		return;
 	}
 	
-	let arguments = Arguments::collect( &opt_vals );
-	
 	println!("Loading Elite Dangerous universe data...");
 	println!("");
 	
-	let universe = universe::load_universe(&arguments.ship_size);
-	println!("");
-	println!("Universe loaded!");
+	let arguments = Arguments::collect( &opt_vals );
 	
-	println!("{}", SEPARATOR );
+	let universe = Universe::load(&arguments.ship_size);
 	
 //	let mut system_name = arguments.system;
 //	let mut system = None;
@@ -228,50 +227,165 @@ fn main() {
 		}
 	}
 	
-	let mut station = station.unwrap().clone();
-	let system = universe.get_system( &station.system_id ).unwrap();
+	let station = station.unwrap();
 	
-	let mut analyzer = Analyzer {
-		jump_range: arguments.jump_range,
+	let state = PlayerState {
+		universe: &universe,
+		station: &station,
+		
 		credit_balance: arguments.credit_balance,
 		minimum_balance: arguments.minimum_balance,
-		cargo_capacity: arguments.cargo,
-		universe: &universe
+		
+		jump_range: arguments.jump_range,
+		cargo_capacity: arguments.cargo
 	};
 	
+	println!("");
+	println!("Universe loaded!");
+	match opt_vals.opt_str("d") {
+		Some(str) => {
+			let depth = match usize::from_str( str.as_str() ) {
+				Ok(v) => v,
+				Err(reason) => panic!("Invalid debug depth '{}': {}", str, reason)
+			};
+			
+			run_debug( &state, arguments.search_quality, depth );
+		},
+		None => {
+			run_search( &state, arguments.search_quality );
+		}
+	}
+}
 	
+fn run_debug( state: &PlayerState, search_quality: SearchQuality, hops: usize ) {
+	println!("{}", SEPARATOR );
+	
+	let hop_width = search_quality.get_hop_width();
+	let depth = search_quality.get_depth();
+	let total = hop_width.pow( depth as u32 );
+	
+	println!("Enumerating {} trades per station to a depth of {} hops ...", hop_width, depth );
+	println!("Total stations: {}", total);
+	
+	println!("{}", SEPARATOR );
+	let mut search = SearchStation::new( state.clone(), search_quality );
+	
+	let mut profit_total = 0;
+	let mut cost_in_seconds = 0f64;
+	println!("hop\tprofit\tly\tminutes\tprofit/min\tcargo\tcmdy.\tsystem\tstation");
+	
+	for i in 0..hops {
+		match search.next_trade() {
+			Some(search_trade) => {
+				search = search_trade.sell_station;
+				let trade = search_trade.trade;
+				
+				profit_total += trade.profit_total;
+				cost_in_seconds += trade.distance_in_seconds;
+				
+				let minutes = trade.distance_in_seconds / 60f64;
+				let profit_per_min = trade.profit_total as f64 / minutes;
+				
+				println!("{}\t{}\t{:.2}\t{:.2}\t{:.2}\t{}\t{}\t{}\t{}",
+					i, 
+					trade.profit_total,
+					trade.distance_to_system,
+					minutes,
+					profit_per_min,
+					trade.used_cargo,
+					trade.commodity_name,
+					trade.sell_system.system_name,
+					trade.sell_station.station_name,
+				);
+			},
+			None => { println!("No trade found"); break; }
+		};
+	}
+	
+	let minutes = cost_in_seconds / 60f64;
+	let profit_per_min = match minutes {
+		0f64 => 0f64,
+		_ => profit_total as f64 / minutes
+	};
+	
+	println!("{}", SEPARATOR );
+	println!("hops\tprofit\tminutes\tprofit/min");
+	println!("{}\t{}\t{:.3}\t{:.3}", hops, profit_total, minutes, profit_per_min);
+	println!("{}", SEPARATOR );
+	println!("{} hops", hops );
+	println!("{} total profit", NumericUnit::new_string( profit_total, &"cr".to_string() ) );
+	println!("{:.1} minutes", minutes );
+	println!("{} profit/min", NumericUnit::new_string( profit_per_min, &"cr".to_string() ));
+}
+
+fn read_price_update() -> u16 {
+	println!("Enter the sell price per ton:");
+	
+	let line = read_line();
+	let val = match u16::from_str( line.as_str() ) {
+		Ok(price) => price,
+		Err(reason) => {
+			println!("Failed to parse answer '{}' ({}).  Please try again.", line, reason);
+			read_price_update()
+		}
+	};
+	
+	println!("");
+	val
+}
+
+fn run_search( state: &PlayerState, search_quality: SearchQuality ) {
+	let hop_width = search_quality.get_hop_width();
+	let depth = search_quality.get_depth();
+	
+	let station = state.station;
+	let system = state.universe.get_system( &state.station.system_id ).unwrap();
+	
+	println!("");
 	println!("Starting route search from {} [{}] ...", system.system_name, station.station_name );
+	println!("Enumerating {} trades per station to a depth of {} hops ...", hop_width, depth );
+	println!("{}", SEPARATOR );
 	
 	let mut i = 0;
 	let mut last_trade : Option<(u32, f64, PreciseTime)> = None;
 	
-	// depth 0
+	let mut sum_profit = 0;
+	let mut sum_minutes = 0f64;
+	
+	let mut search = SearchStation::new( state.clone(), search_quality );
+//	let mut price_updates = Vec::new();
+	
 	loop {
 		i += 1;
-		let (width, depth) = match arguments.search_quality {
-			SearchQuality::High => (7, 5),
-			SearchQuality::Medium => (6, 5),
-			SearchQuality::Low => (3, 5)
-		};
 		
-		let profit = match analyzer.best_next_trade(&station, 60f64, width, depth).first() {
-			Some(trade) => {
+		match search.next_trade() {
+			Some(search_trade) => {
+				search = search_trade.sell_station;
+				let trade = search_trade.trade;
+				
+				let state = trade.state_after_trade();
 				let expected_profit_per_min = trade.profit_per_min.unwrap_or(0f64);
 				let expected_minutes = trade.distance_in_seconds as f64 / 60f64;
-				let new_balance = analyzer.credit_balance + trade.profit_total;
+				let new_balance = state.credit_balance + trade.profit_total;
 				
 				// the first trade is from the station the user is docked at
 				// so calculate it automatically
-				if last_trade.is_some() {
+				let quit = if last_trade.is_some() {
 					println!("");
-					println!("wait:\tpress <enter> once trade is complete.");
+					println!("wait:\tonce trade is complete, press <enter> for next, or q to quit");
 					
-					let mut str = String::new();
-					match std::io::stdin().read_line(&mut str) {
-						Err(reason) => panic!("Failed to read line: {}", reason ),
-						_ => {}
-					};
-				}
+					let str = read_line();
+					match str.as_str() {
+//						"u" | "update" => {
+//							let new_price = read_price_update();
+//							price_updates.push( PriceUpdate::new_sell_update( new_price, trade.sell ) );
+//						},
+						"q" | "quit"  => true,
+						_ => false
+					}
+				} else {
+					false
+				};
 				
 				match last_trade {
 					Some((total_profit, expected_min, start_time)) => {
@@ -292,13 +406,24 @@ fn main() {
 						println!("\t{:.2}% faster than expected", compare);
 						println!("{}", &SEPARATOR.to_string());
 						
+						sum_profit += total_profit;
+						sum_minutes += minutes;
+						
 						// this makes the timer result more visible,
 						// and tricks the user into thinking 
 						// trade calculations take 1 second
-						thread::sleep_ms( 1000 );
+						// the real caulcation happens when the player
+						// is flying the trade route
+						if !quit {
+							thread::sleep_ms( 1000 );
+						}
 					}, 
 					_ => {}
 				};
+				
+				if quit {
+					break;
+				}
 				
 				println!("hop {}:\t{} [{}]", i,
 					trade.buy_system.system_name,
@@ -317,33 +442,48 @@ fn main() {
 				);
 				
 				println!("\t{} profit for balance {}",
-					NumericUnit::from( trade.profit_total ).to_string(&"cr".to_string()),
-					NumericUnit::from( new_balance ).to_string(&"cr".to_string()) );
+					NumericUnit::new_string( trade.profit_total, &"cr".to_string()),
+					NumericUnit::new_string( new_balance, &"cr".to_string()) );
 				
 				println!("");
 				println!("expect:\t{} profit/min over {:.1} mins", 
-						NumericUnit::from( expected_profit_per_min ).to_string(&"cr".to_string()),
+						NumericUnit::new_string( expected_profit_per_min, &"cr".to_string()),
 						expected_minutes);
 
 								
 				println!("\t{} profit/ton for {} tons",
-					NumericUnit::from( trade.profit_per_ton ).to_string(&"cr".to_string()),
+					NumericUnit::new_string( trade.profit_per_ton, &"cr".to_string()),
 					trade.used_cargo);
 				
-				println!("\t{:.1} ly to system, {} ls to station, {:.1} min total",
+				println!("\t{:.1} ly to system, {} ls to station",
 					trade.distance_to_system,
-					trade.distance_to_station,
-					expected_minutes
+					trade.distance_to_station
 				);
 				
 				last_trade = Some((trade.profit_total, expected_minutes, PreciseTime::now()));
-				station = trade.sell_station.clone();
-				
-				trade.profit_total
 			},
 			None => { println!("No trade found"); break; }
 		};
-		
-		analyzer.credit_balance += profit;
 	}
+	
+	let profit_per_min = match sum_minutes {
+		0f64 => 0f64,
+		_ => sum_profit as f64 / sum_minutes
+	};
+	
+	println!("Trade Summary!");
+	println!("\t{} profit/min over {:.1} mins", 
+		NumericUnit::new_string( profit_per_min, &"cr".to_string() ),
+		sum_minutes );
+	
+	println!("\t{} total profit", 
+		NumericUnit::new_string( sum_profit, &"cr".to_string() ) );
+		
+	println!("\tstart balance {} -> end balance {}", 
+		NumericUnit::new_string( state.credit_balance, &"cr".to_string() ),
+		NumericUnit::new_string( state.credit_balance + sum_profit, &"cr".to_string() ) );
+	
+	println!("Done!");
+	// print overall stats
+	// save price updates
 }

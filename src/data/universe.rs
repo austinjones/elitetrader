@@ -1,3 +1,5 @@
+extern crate time;
+
 use std::collections::HashMap;
 
 use std::env::home_dir;
@@ -9,13 +11,15 @@ use spatial::octree::Index;
 use spatial::octree::Octree;
 use spatial::octree::Volume;
 
-use time;
+use time::now;
 use time::Duration;
 
-use io;
-use data::*;
-use conversion;
-use conversion::*;
+use io::*;
+use data::update::PriceUpdate;
+use data::trader::*;
+use data::eddb::*;
+use search::options::*;
+
 use std::str::FromStr;
 
 use CACHE_FILENAME;
@@ -39,7 +43,12 @@ pub struct Universe {
 //	pub listings_by_station: MapList<u32, Listing>
 }
 
-impl Universe {
+#[allow(dead_code)]
+impl<'a> Universe {
+	pub fn load(ship_size: &ShipSize) -> Universe {
+		load_universe( ship_size )
+	}
+	
 	pub fn get_system( &self, id: &u16 ) -> Option<&System> {
 		self.systems.get( &id )
 	}
@@ -64,8 +73,119 @@ impl Universe {
 //		self.listings_by_station.get( &id )
 //	}
 	
-	pub fn get_systems_in_range<'x>( &'x self, system: &System, range: f64 ) -> Vec<&'x System> {
+	pub fn get_systems_in_range( &'a self, system: &System, range: f64 ) -> Vec<&'a System> {
 		self.octree.get_in_radius( system.octree_index(), range )
+	}
+	
+	pub fn buys_from_systems( &'a self, systems: Vec<&'a System> ) -> BuyOptions {
+		let mut ret = BuyOptions::default();
+		
+		for system in systems {
+			for station in &*system.stations {
+				for listing in &station.listings {
+					if listing.is_buy() {
+						ret.push( listing );
+					}
+				}
+			}
+		}
+		
+		ret
+	}
+	
+	pub fn buys_from_system( &'a self, system: &'a System ) -> BuyOptions {
+		let mut ret = BuyOptions::default();
+		
+		for station in &*system.stations {
+			for listing in &station.listings {
+				if listing.is_buy() {
+					ret.push( listing );
+				}
+			}
+		}
+		
+		ret
+	}
+	
+	pub fn buys_from_station( &'a self, station: &'a Station ) -> BuyOptions {
+		let mut ret = BuyOptions::default();
+		
+		for listing in &station.listings {
+			if listing.is_buy() {
+				ret.push( listing );
+			}
+		}
+		
+		ret
+	}
+	
+	pub fn sells_from_systems( &'a self, systems: Vec<&'a System> ) -> SellOptions {
+		let mut ret = SellOptions::default();
+		
+		for system in systems {
+			for station in &*system.stations {
+				for listing in &station.listings {
+					if listing.is_sell() {
+						ret.push( listing );
+					}
+				}
+			}
+		}
+		
+		ret
+	}
+	
+	pub fn sells_from_system( &'a self, system: &'a System ) -> SellOptions {
+		let mut ret = SellOptions::default();
+		
+		for station in &*system.stations {
+			for listing in &station.listings {
+				if listing.is_sell() {
+					ret.push( listing );
+				}
+			}
+		}
+		
+		ret
+	}
+	
+	pub fn sells_from_station( &'a self, station: &'a Station ) -> SellOptions {
+		let mut ret = SellOptions::default();
+		
+		for listing in &station.listings {
+			if listing.supply > 0 {
+				if listing.is_sell() {
+					ret.push( listing );
+				}
+			}
+		}
+		
+		ret
+	}
+	
+	pub fn update_price( &'a mut self, update: &PriceUpdate ) {
+		let station = match self.stations.get_mut( &update.station_id ) {
+			Some(v) => v,
+			None => {return;}
+		};
+		
+		let listing = match station.listings.iter_mut()
+				.filter(|e| e.commodity.commodity_id == update.commodity_id )
+				.next() {
+			Some(v) => v,
+			None => {return;}
+		};
+				
+		match update.buy_price {
+			Some(v) => {listing.buy_price = v},
+			None => {}
+		};
+				
+		match update.sell_price {
+			Some(v) => {listing.sell_price = v},
+			None => {}
+		};
+		
 	}
 }
 
@@ -90,7 +210,7 @@ fn get_cachefile_loc() -> String {
 	}
 }
 
-pub fn load_universe(ship_size: &ShipSize) -> Universe {
+fn load_universe(ship_size: &ShipSize) -> Universe {
 	let cachefile_loc = get_cachefile_loc();
 	let cachefile_path = Path::new( &cachefile_loc );
 	
@@ -115,7 +235,7 @@ pub fn load_universe(ship_size: &ShipSize) -> Universe {
 			
 			if age < threshold {
 				println!("Loading cached file from {} ...", cachefile_loc );
-				io::read_json( cachefile_path )
+				read_json( cachefile_path )
 			} else {
 				println!("File was modified {} hours ago - refreshing", age.num_hours() );
 				recalculate_systems( cachefile_path )
@@ -191,18 +311,18 @@ fn recalculate_systems( path: &Path ) -> Vec<System> {
 	println!("The cached data file is stale, or did not exist.  Reloading data from eddb.io ...");
 	
 	println!("Loading commodities.json...");
-	let commodities_json : Vec<CommodityJson> = io::http_read_json(&"http://eddb.io/archive/v3/commodities.json".to_string());
+	let commodities_json : Vec<CommodityJson> = http_read_json(&"http://eddb.io/archive/v3/commodities.json".to_string());
 	
 	println!("Loading system.json...");
-	let systems_json : Vec<SystemJson> = io::http_read_json(&"http://eddb.io/archive/v3/systems.json".to_string());
+	let systems_json : Vec<SystemJson> = http_read_json(&"http://eddb.io/archive/v3/systems.json".to_string());
 	
 	println!("Loading stations.json...");
-	let stations_json : Vec<StationJson> = io::http_read_json(&"http://eddb.io/archive/v3/stations.json".to_string());
+	let stations_json : Vec<StationJson> = http_read_json(&"http://eddb.io/archive/v3/stations.json".to_string());
 	
 	println!("Loads complete.  Converting to internal format...");
 	
 //	println!("Grouping stations by system");
-	let stations_by_system : HashMap<u16, Vec<&StationJson>> = conversion::get_stations_by_system( &stations_json );
+	let stations_by_system : HashMap<u16, Vec<&StationJson>> = get_stations_by_system( &stations_json );
 	
 	let mut commodities_by_id = HashMap::new();
 	let mut commodities_by_name = HashMap::new();
@@ -300,7 +420,7 @@ fn recalculate_systems( path: &Path ) -> Vec<System> {
 	}
 	
 	println!("Saving cachefile to {} ...", path.to_str().unwrap() );
-	io::write_json( path, &systems );
+	write_json( path, &systems );
 	
 	return systems;
 }

@@ -1,5 +1,4 @@
-use rustc_serialize;
-use rustc_serialize::json;
+use rustc_serialize::*;
 
 use std::io::Write;
 use std::fs::File;
@@ -11,7 +10,7 @@ use flate2::read::GzDecoder;
 use hyper::Client;
 use hyper::header::*;
 
-pub fn read_json<T: rustc_serialize::Decodable>( path: &Path ) -> T {
+pub fn read_json<T: Decodable>( path: &Path ) -> T {
 	let mut file = File::open( path ).unwrap();
 //	println!("Reading file {}", path.to_str().unwrap() );
 	
@@ -25,7 +24,7 @@ pub fn read_json<T: rustc_serialize::Decodable>( path: &Path ) -> T {
 	}
 }
 
-pub fn write_json<T: rustc_serialize::Encodable>( path: &Path, data: &T ) {
+pub fn write_json<T: Encodable>( path: &Path, data: &T ) {
 	let mut file = match File::create( path ) {
 		Ok(file) => file,
 		Err(reason) => panic!( "Failed to create file {}, reason: {}", path.to_str().unwrap(), reason )
@@ -43,7 +42,7 @@ pub fn write_json<T: rustc_serialize::Encodable>( path: &Path, data: &T ) {
 	}; 
 }
 
-pub fn http_read_json<T: rustc_serialize::Decodable>( url: &String ) -> T {
+pub fn http_read_json<T: Decodable>( url: &String ) -> T {
 	let mut client = Client::new();
 	let mut res = client.get(url)
 		.header(

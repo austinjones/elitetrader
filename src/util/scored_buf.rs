@@ -5,18 +5,11 @@ use std::collections::VecDeque;
 
 use std::fmt::Debug;
 
-pub trait Scored<K> {
-	fn get_score(&self) -> K;
-}
-
-struct ScoredItem<K, V> {
-	score: K,
-	value: V
-}
 
 pub struct ScoredCircularBuffer<K,V> {
 	size: usize,
 	deque: VecDeque<ScoredItem<K,V>>,
+//	rand_factor: Option<f64>,
 	sort: Sort
 }
 
@@ -26,10 +19,19 @@ pub enum Sort {
 	Descending
 }
 
+pub trait Scored<K> {
+	fn score(&self) -> K;
+}
+
+struct ScoredItem<K, V> {
+	score: K,
+	value: V
+}
+
 #[allow(dead_code)]
 impl<K: PartialOrd<K> + Debug, V:Scored<K>> ScoredCircularBuffer<K,V> {
 	pub fn push_scored( &mut self, item: V ) {
-		let score = item.get_score();
+		let score = item.score();
 		self.push( item, score );
 	}
 }
@@ -37,7 +39,12 @@ impl<K: PartialOrd<K> + Debug, V:Scored<K>> ScoredCircularBuffer<K,V> {
 #[allow(dead_code)]
 impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 	pub fn new(size: usize, sort: Sort ) -> ScoredCircularBuffer<K,V> {
-		ScoredCircularBuffer { size: size, deque: VecDeque::with_capacity( size ), sort: sort }
+		ScoredCircularBuffer { 
+			size: size, 
+			deque: VecDeque::with_capacity( size ), 
+//			rand_factor: None,
+			sort: sort 
+		}
 	}
 	
 	pub fn capacity( &self ) -> usize {
@@ -96,6 +103,25 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 		}
 	}
 	
+//	pub fn first(&self) -> Option<&V> {
+//		let vals = self.sort();
+//		vals.drain().next()
+//	}
+//	
+//	pub fn first_mut(&mut self) -> Option<V> {
+//		let vals = self.sort_mut();
+//		vals.drain().next()
+//	}
+//		
+//	pub fn last(&self) -> Option<&V> {
+//		let vals = self.sort();
+//		vals.drain().last()
+//	}
+//	
+//	pub fn last_mut(&mut self) -> Option<V> {
+//		let vals = self.sort_mut();
+//		vals.drain().last()
+//	}
 	
 	fn iter(&self) -> Iter<ScoredItem<K,V>> {
 		self.deque.iter()
@@ -109,8 +135,8 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 		let mut sorted: Vec<&ScoredItem<K,V>> = self.iter().collect();
 		// sort descending
 		match self.sort {
-			Sort::Ascending => sorted.sort_by(|a,b| a.score.partial_cmp( &b.score ).unwrap() ),
-			Sort::Descending => sorted.sort_by(|a,b| b.score.partial_cmp( &a.score ).unwrap() )
+			Sort::Ascending => sorted.sort_by(|a,b| a.score.partial_cmp( &b.score ).expect("Failed to compare ScoredCircularBuffer score") ),
+			Sort::Descending => sorted.sort_by(|a,b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
 		}
 		
 		let result : Vec<&V> = sorted.drain().map(|e| &e.value ).collect();
@@ -122,8 +148,8 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 		// sort descending
 		
 		match self.sort {
-			Sort::Ascending => sorted.sort_by(|a,b| a.score.partial_cmp( &b.score ).unwrap() ),
-			Sort::Descending => sorted.sort_by(|a,b| b.score.partial_cmp( &a.score ).unwrap() )
+			Sort::Ascending => sorted.sort_by(|a,b| a.score.partial_cmp( &b.score ).expect("Failed to compare ScoredCircularBuffer score") ),
+			Sort::Descending => sorted.sort_by(|a,b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
 		}
 		
 		let result : Vec<V> = sorted.drain().map(|e| e.value ).collect();

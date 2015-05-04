@@ -1,7 +1,7 @@
-use map_list::MapList;
+use util::map_list::MapList;
 
-use data::Listing;
-use data::Identified;
+use data::trader::Listing;
+use data::trader::Identified;
 
 pub struct ListingOptions<'a> {
 	pub nodes: Vec<&'a Listing>

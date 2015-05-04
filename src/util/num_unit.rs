@@ -48,10 +48,18 @@ impl NumericUnit {
 			None => panic!( "Failed to convert {} to f64", val )
 		};
 		
-		let log_factor = 1000f64;
-		
-		let base = float.log(log_factor).floor();
-		let significand = float / log_factor.powf(base);
+		let (base, significand) = match float {
+			0f64 => {
+				(0f64, 0f64)
+			},
+			_ => {
+				let log_factor = 1000f64;
+				
+				let base = float.log(log_factor).floor();
+				let significand = float / log_factor.powf(base);
+				(base, significand)
+			}
+		};
 		
 		match base as usize {
 			4 => NumericUnit::Tril( significand ),
@@ -59,7 +67,7 @@ impl NumericUnit {
 			2 => NumericUnit::Mil( significand ),
 			1 => NumericUnit::Kilo( significand ),
 			0 => NumericUnit::Unit( significand ),
-			_ => panic!("Numeric value {} not supported by NumericUnit")
+			n @ _ => panic!("Numeric value {} not supported by NumericUnit - base size {}", val, n)
 		}
 	}
 		

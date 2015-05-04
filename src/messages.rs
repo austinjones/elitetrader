@@ -37,7 +37,7 @@ sell:	Chono [Siddha Ring]\n\
 \n\
 expect:	28.0 Kcr profit/min over 9.1 mins\n\
 1.2 Kcr profit/ton for 216 tons\n\
-25.8 ly to system, 9 ls to station, 9.1 min total\n\
+25.8 ly to system, 9 ls to station\n\
 \n\
 wait:	press <enter> once trade is complete.\n\
 \n\

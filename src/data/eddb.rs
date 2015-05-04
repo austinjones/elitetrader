@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use data::Identified;
+use data::trader::Identified;
 
 #[derive(RustcDecodable, RustcEncodable, Debug, Clone)]
 pub struct SystemJson {
