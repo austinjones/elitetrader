@@ -80,7 +80,7 @@ impl<'a> SearchStation {
 		
 		let insert = cache.get(&station_id).is_none();
 		if insert {
-			let mut trades = SearchStation::best_1hop_trades( iuniverse, &self.state, self.search_quality );
+			let trades = SearchStation::best_1hop_trades( iuniverse, &self.state, self.search_quality );
 			cache.insert( station_id, trades.clone() );
 			
 			trades

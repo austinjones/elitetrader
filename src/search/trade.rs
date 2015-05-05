@@ -42,6 +42,11 @@ impl<'a> FullTrade<'a> {
 	pub fn state_after_trade( &self ) -> PlayerState {
 		self.state.with_trade( self )
 	}
+	
+	pub fn with_sell_price( &self, sell_price: u16 ) -> FullTrade<'a> {
+		let new_unit = self.unit.with_sell_price( sell_price );
+		FullTrade::new( &self.state, new_unit )
+	}
 }
 
 impl<'a> FullTrade<'a> {
@@ -140,6 +145,21 @@ impl<'b> UnitTrade<'b> {
 	
 	pub fn score( &self ) -> Option<f64> {
 		self.profit_per_ton_per_min
+	}
+	
+	pub fn with_sell_price( &self, sell_price: u16 ) -> UnitTrade<'b> {
+		let mut new = self.clone();
+		let mut sell = self.sell.clone();
+		sell.sell_price = sell_price;
+		
+		let profit_per_ton = UnitTrade::profit_per_ton( self.buy, &sell );
+		let profit_per_ton_per_min = UnitTrade::profit_per_ton_per_min( self.buy, &sell, self.distance_in_seconds );
+		
+		new.sell_price = sell_price;
+		new.profit_per_ton = profit_per_ton;
+		new.profit_per_ton_per_min = profit_per_ton_per_min;
+		
+		new
 	}
 }
 

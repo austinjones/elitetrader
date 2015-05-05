@@ -206,16 +206,17 @@ fn run_search( universe: &mut Universe, mut iuniverse: IndexedUniverse,
 	let mut sum_minutes = 0f64;
 	
 	let mut player_state = state_in.clone();
-	let mut recalculate = false;
 	
 //	let mut price_updates = Vec::new();
-	let quit = false;
+	let mut quit = false;
+	let mut reindex = false;
 	
 	'hop: while !quit {
-		if recalculate {
+		if reindex {
 			println!("Recalculating index due to price update...");
 			iuniverse = IndexedUniverse::calculate( universe );
 			println!("{}", SEPARATOR );
+			reindex = false;
 		}
 		
 		let search_quality = match i {
@@ -286,7 +287,7 @@ fn run_search( universe: &mut Universe, mut iuniverse: IndexedUniverse,
 					let update = PriceUpdate::new_buy_update(buy_price, supply, trade.unit.buy);
 					universe.apply_update( update );
 					
-					recalculate = true;
+					reindex = true;
 					println!("{}", SEPARATOR);
 					continue 'hop;
 				},
@@ -301,11 +302,9 @@ fn run_search( universe: &mut Universe, mut iuniverse: IndexedUniverse,
 		}
 		
 		i += 1;
-		let trade = accepted_trade.unwrap();
-		let trade_state = trade.state_after_trade();
+		let mut trade = accepted_trade.unwrap();
 		
 		let start_time = PreciseTime::now();
-		let mut quit = false;
 		println!("end:\t<enter> to complete trade, u to update sell price, or q to complete route");
 		
 		// the first trade is from the station the user is docked at
@@ -318,11 +317,15 @@ fn run_search( universe: &mut Universe, mut iuniverse: IndexedUniverse,
 					let update = PriceUpdate::new_sell_update(sell_price, trade.unit.sell);
 					universe.apply_update( update );
 					
-					recalculate = true;
+					reindex = true;
+					
+					trade = trade.with_sell_price( sell_price );
 			},
 			"q" | "quit"  => { quit = true; },
 			_ => {}
 		}
+		
+		let trade_state = trade.state_after_trade();
 		
 		let span = start_time.to( PreciseTime::now() );
 		let minutes = span.num_milliseconds() as f64 / 60000f64;
@@ -348,15 +351,6 @@ fn run_search( universe: &mut Universe, mut iuniverse: IndexedUniverse,
 		sum_minutes += minutes;
 		
 		player_state = trade_state;
-		
-		// this makes the timer result more visible,
-		// and tricks the user into thinking 
-		// trade calculations take 1 second
-		// the real caulcation happens when the player
-		// is flying the trade route
-		if !quit {
-			thread::sleep_ms( 1000 );
-		}
 	}
 	
 	let profit_per_min = match sum_minutes {
