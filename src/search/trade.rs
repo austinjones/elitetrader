@@ -4,13 +4,64 @@ use std::fmt::Error;
 use std::cmp::min;
 
 use data::trader::*;
+use data::IndexedUniverse;
 use search::player_state::PlayerState;
 
 #[derive(Clone)]
-pub struct Trade<'a> {
-	pub commodity_name: String,
+pub struct FullTrade<'a> {
+	pub unit: UnitTrade<'a>,
+	pub profit_total: u32,
+	pub used_cargo: u32,
+	pub profit_per_min: Option<f64>,
+	pub is_valid: bool,
+	state: PlayerState
+}
+
+impl<'a> FullTrade<'a> {
+	pub fn new( state: &PlayerState, unit: UnitTrade<'a> ) -> FullTrade<'a> {
+		let used_cargo = FullTrade::used_cargo( state, unit.buy );
+		let profit_per_min = FullTrade::profit_per_min( &unit, used_cargo );
+		let is_valid = unit.is_valid && used_cargo > 0;
+//		println!( "Using {} of {}, profit/ton {}, profit total {}, profit/min {} over {}sec",
+//			used_cargo, buy.commodity.commodity_name,
+//			profit_per_ton, profit_total, profit_per_min.unwrap_or(0f64), cost_in_seconds );
+		FullTrade {
+			used_cargo: used_cargo,
+			profit_total: unit.profit_per_ton * used_cargo,
+			profit_per_min: profit_per_min,
+			is_valid: is_valid,
+			state: state.clone(),
+			unit: unit
+		}
+	}
 	
-	state: PlayerState<'a>,
+	pub fn state_before_trade( &self ) -> PlayerState {
+		self.state.clone()
+	}
+	
+	pub fn state_after_trade( &self ) -> PlayerState {
+		self.state.with_trade( self )
+	}
+}
+
+impl<'a> FullTrade<'a> {
+	pub fn profit_per_min( unit: &UnitTrade, used_cargo: u32 ) -> Option<f64> {
+		unit.profit_per_ton_per_min.map( |v| v*used_cargo as f64 )
+	}
+	
+	pub fn used_cargo( state: &PlayerState, buy: &Listing ) -> u32 {
+		if state.credit_balance < state.minimum_balance {
+			return 0;
+		}
+		
+		let possible_cargo = (state.credit_balance - state.minimum_balance) / buy.buy_price as u32;
+		min( possible_cargo, state.cargo_capacity )
+	}
+}
+
+#[derive(Clone)]
+pub struct UnitTrade<'a> {
+	pub commodity_name: String,
 	
 	pub buy: &'a Listing,
 	pub buy_station: &'a Station,
@@ -25,11 +76,9 @@ pub struct Trade<'a> {
 	
 	pub is_valid: bool,
 	pub is_prohibited: bool,
-	
-	pub used_cargo: u32,
-	pub profit_total: u32,
+
 	pub profit_per_ton: u32,
-	pub profit_per_min: Option<f64>,
+	pub profit_per_ton_per_min: Option<f64>,
 	
 	pub distance_to_system: f64,
 	pub distance_to_station: f64,
@@ -38,38 +87,33 @@ pub struct Trade<'a> {
 
 // actual trait impl
 #[allow(dead_code)]
-impl<'b> Trade<'b> {
-	pub fn new( state: &PlayerState<'b>, buy: &'b Listing, sell: &'b Listing ) -> Trade<'b> {
-		let buy_station = state.universe.get_station( &buy.station_id )
+impl<'b> UnitTrade<'b> {
+	pub fn new( iuniverse: &'b IndexedUniverse, state: &PlayerState, buy: &'b Listing, sell: &'b Listing ) -> UnitTrade<'b> {
+		let buy_station = iuniverse.get_station( &buy.station_id )
 			.expect( format!("Unknown station id {}", buy.station_id ).as_str() );
 		
-		let buy_system = state.universe.get_system( &buy.system_id )
+		let buy_system = iuniverse.get_system( &buy.system_id )
 			.expect( format!("Unknown system id {}", buy.system_id ).as_str() );
 		
-		let sell_station = state.universe.get_station( &sell.station_id )
+		let sell_station = iuniverse.get_station( &sell.station_id )
 			.expect( format!("Unknown station id {}", sell.station_id ).as_str() );
 		
-		let sell_system = state.universe.get_system( &sell.system_id )
+		let sell_system = iuniverse.get_system( &sell.system_id )
 			.expect( format!("Unknown system id {}", sell.system_id ).as_str() );
 		
 		let distance_to_system = buy_system.distance( sell_system );
 		let distance_to_station = sell_station.distance_to_star.unwrap_or(100u32);
-		let distance_in_seconds = Trade::cost_in_seconds( state, distance_to_system, distance_to_station );
+		let distance_in_seconds = UnitTrade::cost_in_seconds( state, distance_to_system, distance_to_station );
 		
-		let used_cargo = Trade::used_cargo( state, &buy );
+		let profit_per_ton = UnitTrade::profit_per_ton( &buy, &sell );
 		
-		let profit_per_ton = Trade::profit_per_ton( &buy, &sell );
-		let profit_total = profit_per_ton * used_cargo;
-		
-		let profit_per_min = Trade::profit_per_min( &buy, &sell, used_cargo, distance_in_seconds );
+		let profit_per_ton_per_min = UnitTrade::profit_per_ton_per_min( &buy, &sell, distance_in_seconds );
 //		println!( "Using {} of {}, profit/ton {}, profit total {}, profit/min {} over {}sec",
 //			used_cargo, buy.commodity.commodity_name,
 //			profit_per_ton, profit_total, profit_per_min.unwrap_or(0f64), cost_in_seconds );
 		
-		Trade {
+		UnitTrade {
 			commodity_name: buy.commodity.commodity_name.clone(),
-			
-			state: state.clone(),
 			
 			buy: buy,
 			buy_station: buy_station,
@@ -82,13 +126,11 @@ impl<'b> Trade<'b> {
 			buy_price: buy.buy_price,
 			sell_price: sell.sell_price,
 			
-			is_valid: Trade::is_valid( &buy, &sell, used_cargo ),
-			is_prohibited: Trade::is_prohibited( &buy.commodity, &sell_station ),
+			is_valid: UnitTrade::is_valid( &buy, &sell ),
+			is_prohibited: UnitTrade::is_prohibited( &buy.commodity, &sell_station ),
 			
-			used_cargo: used_cargo,
-			profit_total: profit_total,
 			profit_per_ton: profit_per_ton,
-			profit_per_min: profit_per_min,
+			profit_per_ton_per_min: profit_per_ton_per_min,
 			
 			distance_to_system: distance_to_system,
 			distance_to_station: distance_to_station as f64,
@@ -97,20 +139,12 @@ impl<'b> Trade<'b> {
 	}
 	
 	pub fn score( &self ) -> Option<f64> {
-		self.profit_per_min
-	}
-	
-	pub fn state_before_trade( &self ) -> PlayerState<'b> {
-		self.state.clone()
-	}
-	
-	pub fn state_after_trade( &self ) -> PlayerState<'b> {
-		self.state.with_trade( self )
+		self.profit_per_ton_per_min
 	}
 }
 
 // static methods
-impl<'b> Trade<'b> {
+impl<'b> UnitTrade<'b> {
 	pub fn profit_per_ton( buy: &Listing, sell: &Listing ) -> u32 {
 		if sell.sell_price > buy.buy_price {
 			(sell.sell_price - buy.buy_price) as u32
@@ -119,9 +153,8 @@ impl<'b> Trade<'b> {
 		}
 	}
 	
-	pub fn is_valid( buy: &Listing, sell: &Listing, used_cargo: u32 ) -> bool {
-		used_cargo > 0 
-			&& buy.supply > 0 
+	pub fn is_valid( buy: &Listing, sell: &Listing ) -> bool {
+		buy.supply > 0 
 			&& buy.buy_price != 0
 			&& buy.buy_price < sell.sell_price 
 			&& buy.commodity == sell.commodity
@@ -131,21 +164,12 @@ impl<'b> Trade<'b> {
 		sell_station.prohibited_commodities.contains( &commodity.commodity_id )
 	}
 	
-	pub fn used_cargo( state: &PlayerState, buy: &Listing ) -> u32 {
-		if state.credit_balance < state.minimum_balance {
-			return 0;
-		}
-		
-		let possible_cargo = (state.credit_balance - state.minimum_balance) / buy.buy_price as u32;
-		min( possible_cargo, state.cargo_capacity )
-	}
-	
-	pub fn profit_per_min( buy: &Listing, sell: &Listing, used_cargo: u32, distance_in_seconds: f64  ) -> Option<f64> {
-		if !Trade::is_valid( buy, sell, used_cargo ) {
+	pub fn profit_per_ton_per_min( buy: &Listing, sell: &Listing, distance_in_seconds: f64  ) -> Option<f64> {
+		if !UnitTrade::is_valid( buy, sell ) {
 			return None;
 		}
 		
-		let profit_total = Trade::profit_per_ton( buy, sell ) * used_cargo;
+		let profit_total = UnitTrade::profit_per_ton( buy, sell );
 		let profit_per_min = match distance_in_seconds {
 			0f64 => 60f64 * profit_total as f64,
 			_ => 60f64 * profit_total as f64 / distance_in_seconds
@@ -158,11 +182,17 @@ impl<'b> Trade<'b> {
 		let dock_time = 77f64;
 		let undock_time = 29f64;
 		
-		let jump_time = 45f64 * Trade::jump_count( system_distance, state.jump_range );
+		let jump_time = UnitTrade::time_to_system( system_distance, state.jump_range );
+		let supercruise_time = UnitTrade::time_to_station( station_distance_ls as f64 );
 		
-		let system_time = 37.39354f64 * station_distance_ls as f64;
-		
-		undock_time + jump_time + system_time + dock_time
+		undock_time + jump_time + supercruise_time + dock_time
+	}
+	
+	pub fn time_to_station( station_distance_ls: f64 ) -> f64 {
+		let a = 30.02805f64;
+		let x = station_distance_ls;
+		let b = 0.2262488;
+		a * x.powf( b )
 	}
 	
 	pub fn jump_count( system_distance: f64, jump_range: f64 ) -> f64 {
@@ -174,12 +204,16 @@ impl<'b> Trade<'b> {
 		let b = 0.3889492;
 		m * x + b
 	}
+	
+	fn time_to_system( system_distance: f64, jump_range: f64 ) -> f64 {
+		45f64 * UnitTrade::jump_count( system_distance, jump_range )
+	}
 }
 
-impl<'b> Debug for Trade<'b> {
+impl<'b> Debug for UnitTrade<'b> {
 	fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
-		let str = format!( "{}cr profit in {}sec - buy {} for {} at {}.{}, sell for {} at {}.{}",
-			self.profit_total,
+		let str = format!( "{}cr profit/ton in {}sec - buy {} for {} at {}.{}, sell for {} at {}.{}",
+			self.profit_per_ton,
 			self.distance_in_seconds,
 			self.buy.commodity.commodity_name,
 			self.buy.buy_price,
