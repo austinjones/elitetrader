@@ -8,9 +8,13 @@ pub use self::search::SearchStation;
 pub use self::search::SearchTrade;
 pub use self::search::SearchResult;
 
-mod trade;
-pub use self::trade::FullTrade;
-pub use self::trade::UnitTrade;
+mod unit_trade;
+pub use self::unit_trade::UnitTrade;
+
+mod full_trade;
+pub use self::full_trade::FullTrade;
+
+pub mod time_estimate;
 
 mod player_state;
 pub use self::player_state::PlayerState;

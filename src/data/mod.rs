@@ -1,3 +1,5 @@
+mod adjustments;
+
 pub mod eddb;
 pub mod trader;
 
@@ -7,5 +9,8 @@ pub use self::universe::Universe;
 mod indexed_universe;
 pub use self::indexed_universe::IndexedUniverse;
 
-mod update;
-pub use self::update::PriceUpdate;
+mod price_adjustment;
+pub use self::price_adjustment::PriceAdjustment;
+
+mod time_adjustment;
+pub use self::time_adjustment::TimeAdjustment;

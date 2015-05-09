@@ -10,6 +10,8 @@ use data::universe::Universe;
 use data::trader::*;
 use search::options::*;
 
+use util::map_list::MapList;
+
 pub struct IndexedUniverse {
 	// lookups for high-performance access
 	pub systems: HashMap<u16, System>,
@@ -20,7 +22,7 @@ pub struct IndexedUniverse {
 	
 	// lookups for user interaction
 	pub stations: HashMap<u32, Station>,
-	pub stations_by_name: HashMap<String, Station>,
+	pub stations_by_name: MapList<String, Station>
 	
 	// not sure what these are good for
 //	pub listings_by_system: MapList<u16, Listing>,
@@ -31,10 +33,13 @@ pub struct IndexedUniverse {
 impl<'a> IndexedUniverse {
 	pub fn calculate( universe: &Universe ) -> IndexedUniverse {
 		
-		println!( "Found {} systems.  Generating indexes...", universe.systems.len() );
+//		println!( "Found {} systems.  Generating indexes...", universe.systems.len() );
 		
 		let mut systems_map = HashMap::new();
+//		let mut systems_by_name = HashMap::new();
+		
 		for system in universe.systems.clone() {
+//			systems_by_name.insert( system.system_name.to_lowercase(), system.clone() );
 			systems_map.insert( system.to_id(), system );
 		}	
 			
@@ -54,17 +59,12 @@ impl<'a> IndexedUniverse {
 	//	}
 		
 		let mut stations_map = HashMap::new();
+		let mut stations_by_name = MapList::new();
 		for mut system in universe.systems.clone() {
 			for station in system.stations.drain() {
+				stations_by_name.insert( station.station_name.to_lowercase(), station.clone() );
 				stations_map.insert( station.to_id(), station );
 			}
-		}
-		
-		let mut station_name_map = HashMap::new();
-		for mut system in universe.systems.clone() {
-			for station in system.stations.drain() {
-				station_name_map.insert( station.station_name.to_lowercase(), station );
-			}	
 		}
 		
 	//	let mut listings_by_station = MapList::new();
@@ -81,12 +81,12 @@ impl<'a> IndexedUniverse {
 		
 		IndexedUniverse {
 			systems: systems_map,
-	//		systems_by_name: system_name_map,
+//			systems_by_name: systems_by_name,
 			stations: stations_map,
-			stations_by_name: station_name_map,
+			stations_by_name: stations_by_name,
 	//		listings_by_system: listings_by_system,
 	//		listings_by_station: listings_by_station,
-			octree: octree 
+			octree: octree
 		}
 	}
 	
@@ -102,7 +102,7 @@ impl<'a> IndexedUniverse {
 		self.stations.get( &id )
 	}
 	
-	pub fn get_station_by_name( &self, station_name: &String ) -> Option<&Station> {
+	pub fn get_station_by_name( &self, station_name: &String ) -> Option<&Vec<Station>> {
 		self.stations_by_name.get( &station_name.to_lowercase() )
 	}
 	

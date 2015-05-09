@@ -2,13 +2,31 @@ use rustc_serialize::*;
 
 use std::io::Write;
 use std::fs::File;
+use std::fs::create_dir_all;
 use std::path::Path;
+use std::path::PathBuf;
 use std::io::Read;
+
+use std::env::home_dir;
 
 use flate2::read::GzDecoder;
 
 use hyper::Client;
 use hyper::header::*;
+
+pub fn get_base_directory() -> PathBuf {
+	match home_dir() {
+		Some(home_path) => {
+			let ed_path = home_path.join(".elite_trader" );
+			match create_dir_all( &ed_path ) {
+				Ok(_) => {},
+				Err(_) => panic!("Failed to create base directory")
+			}
+			ed_path.to_path_buf()
+		},
+		None => Path::new(".").to_path_buf()
+	}
+}
 
 pub fn read_json<T: Decodable>( path: &Path ) -> T {
 	let mut file = File::open( path ).unwrap();

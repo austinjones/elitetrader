@@ -8,6 +8,8 @@ pub struct SystemJson {
 	pub x: f64,
 	pub y: f64,
 	pub z: f64,
+	pub needs_permit: Option<u8>,
+	pub updated_at: u64
 //	faction: Option<String>,
 //	population: Option<u64>,
 //	government: Option<String>,
@@ -15,8 +17,6 @@ pub struct SystemJson {
 //	state: Option<String>,
 //	security: Option<String>,
 //	primary_economy: Option<String>,
-//	needs_permit: Option<u8>,
-//	updated_at: u64
 }
 
 impl Identified<u16> for SystemJson { 
@@ -44,7 +44,7 @@ pub struct StationJson {
 //	import_commodities: Box<Vec<String>>,
 //	export_commodities: Box<Vec<String>>,
 //	economies: Box<Vec<String>>,
-//	updated_at: u32,
+	pub updated_at: u64,
 	pub system_id: u16,
 	pub listings: Vec<StationCommodityListingJson>
 }
@@ -63,8 +63,8 @@ pub struct StationCommodityListingJson {
 	pub supply: i64,
 	pub buy_price: i32,
 	pub sell_price: i32,
+	pub collected_at: u64
 //	pub demand: u32,
-//	collected_at: u32,
 //	update_count: u16
 }
 
@@ -73,7 +73,7 @@ pub struct CommodityJson {
 	pub id: u8,
 	pub name: String,
 	pub category_id: u8,
-	pub average_price: Option<u16>,
+//	pub average_price: Option<u32>,
 	pub category: CommodityCategoryJson
 }
 

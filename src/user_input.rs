@@ -1,7 +1,21 @@
 use std::str::FromStr;
 use std::io::stdin;
 
-pub fn prompt_value( flag: &'static str, description: &'static str ) -> String {
+pub fn prompt_confirm( message: &str ) -> bool {
+	println!( "{} (y/n): ", message );
+	
+	let val = read_line();
+	
+	println!("");
+	
+	match val.to_lowercase().as_str() {
+		"y" | "yes" => true,
+		"n" | "no" => false,
+		_ => prompt_confirm( message )
+	}
+}
+
+pub fn prompt_value( flag: &str, description: &str ) -> String {
 	println!( "Please provide the flag -{}, or enter the {} now: ", flag, description );
 	
 	let val = read_line();

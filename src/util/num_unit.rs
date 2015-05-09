@@ -17,7 +17,7 @@ impl FromStr for NumericUnit {
 	type Err = String;
 	
 	fn from_str(input: &str) -> Result<NumericUnit, String> {
-		let numstr : &str = input.trim_matches(|c: char| !c.is_numeric() );
+		let numstr : &str = input.trim_matches(|c: char| !c.is_numeric() || c == '.' );
 		
 		match f64::from_str( numstr ) {
 			Ok(num) =>  match input.trim().to_lowercase().chars().last() {

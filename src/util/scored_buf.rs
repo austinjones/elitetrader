@@ -23,9 +23,9 @@ pub trait Scored<K> {
 	fn score(&self) -> K;
 }
 
-struct ScoredItem<K, V> {
-	score: K,
-	value: V
+pub struct ScoredItem<K, V> {
+	pub score: K,
+	pub value: V
 }
 
 #[allow(dead_code)]
@@ -59,7 +59,7 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 		self.deque.is_empty()
 	}
 	
-	fn drain( &mut self ) -> Drain<ScoredItem<K,V>> {
+	pub fn drain( &mut self ) -> Drain<ScoredItem<K,V>> {
 		self.deque.drain()
 	}
 	
@@ -123,20 +123,20 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 //		vals.drain().last()
 //	}
 	
-	fn iter(&self) -> Iter<ScoredItem<K,V>> {
+	pub fn iter(&self) -> Iter<ScoredItem<K,V>> {
 		self.deque.iter()
 	}
 	
-	fn iter_mut(&mut self) -> IterMut<ScoredItem<K,V>> {
+	pub fn iter_mut(&mut self) -> IterMut<ScoredItem<K,V>> {
 		self.deque.iter_mut()
 	}
 	
 	pub fn sort( &self ) -> Vec<&V> {
 		let mut sorted: Vec<&ScoredItem<K,V>> = self.iter().collect();
-		// sort descending
+		
 		match self.sort {
-			Sort::Ascending => sorted.sort_by(|a,b| a.score.partial_cmp( &b.score ).expect("Failed to compare ScoredCircularBuffer score") ),
-			Sort::Descending => sorted.sort_by(|a,b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
+			Sort::Ascending => sorted.sort_by(|ref a, ref b| a.score.partial_cmp( &b.score ).expect("Failed to compare ScoredCircularBuffer score") ),
+			Sort::Descending => sorted.sort_by(|ref a, ref b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
 		}
 		
 		let result : Vec<&V> = sorted.drain().map(|e| &e.value ).collect();
@@ -145,11 +145,10 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 
 	pub fn sort_mut( &mut self ) -> Vec<V> {
 		let mut sorted: Vec<ScoredItem<K,V>> = self.drain().collect();
-		// sort descending
 		
 		match self.sort {
-			Sort::Ascending => sorted.sort_by(|a,b| a.score.partial_cmp( &b.score ).expect("Failed to compare ScoredCircularBuffer score") ),
-			Sort::Descending => sorted.sort_by(|a,b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
+			Sort::Ascending => sorted.sort_by(|ref a, ref b| a.score.partial_cmp( &b.score ).expect("Failed to compare ScoredCircularBuffer score") ),
+			Sort::Descending => sorted.sort_by(|ref a, ref b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
 		}
 		
 		let result : Vec<V> = sorted.drain().map(|e| e.value ).collect();

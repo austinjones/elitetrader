@@ -1,9 +1,13 @@
+use std::str::FromStr;
+
+use data::Universe;
 use data::IndexedUniverse;
 use data::trader::Station;
 use arguments::Arguments;
 
-use search::trade::FullTrade;
-use user_input::prompt_value;
+use search::full_trade::FullTrade;
+use user_input::*;
+use SEPARATOR;
 
 #[derive(Clone)]
 pub struct PlayerState {
@@ -14,24 +18,57 @@ pub struct PlayerState {
 	pub minimum_balance: u32,
 	
 	pub jump_range: f64,
-	pub cargo_capacity: u32
+	pub cargo_capacity: u32,
+	
+	pub raw_adjustment_factor: f64
 }
 
 #[allow(dead_code)]
 impl PlayerState {	
-	pub fn new( arguments: &Arguments, indexed_universe: &IndexedUniverse ) -> PlayerState {
+	pub fn new( arguments: &Arguments, universe: &Universe, indexed_universe: &IndexedUniverse ) -> PlayerState {
 		let mut station_name = arguments.station.clone();
-		let mut station = None;
-		while !station.is_some() {
-			station = indexed_universe.get_station_by_name( &station_name );
+		let mut stations;
+		
+		loop {
+			stations = indexed_universe.get_station_by_name( &station_name );
 			
-			if !station.is_some() {
-				println!( "The station '{}' was not found.", station_name );
-				station_name = prompt_value( "t", "corrected station name" );
+			if stations.is_some() {
+				break;
 			}
+			
+			println!( "The station '{}' was not found.", station_name );
+			station_name = prompt_value( "t", "corrected station name" );
 		}
 		
-		let station = station.unwrap();
+		let stations = stations.unwrap();
+		
+		let station = match stations.len() {
+			0 => panic!("Stations list was empty"),
+			1 => stations.iter().next().unwrap(),
+			_ => {
+				println!("{}", SEPARATOR);
+				println!("Multiple stations were found.");
+				let mut print_index = 1;
+				for station in stations {
+					let system = indexed_universe.get_system( &station.system_id ).unwrap();
+					println!("{}) {} [{}]", print_index, system.system_name, station.station_name );
+					print_index += 1;
+				}
+				
+				println!("");
+				println!("Please enter the index of your station:");
+				
+				let index = match usize::from_str( read_line().as_str() ) {
+					Ok(n) => n - 1,
+					Err(_) => panic!("Invalid station index")
+				};
+				
+				match stations.iter().nth( index ) {
+					Some(s) => s,
+					None => panic!("Your station was not found")
+				}
+			}
+		};
 		
 		PlayerState {
 			station_id: station.station_id,
@@ -41,9 +78,18 @@ impl PlayerState {
 			minimum_balance: arguments.minimum_balance,
 			
 			jump_range: arguments.jump_range,
-			cargo_capacity: arguments.cargo
+			cargo_capacity: arguments.cargo,
+			
+			raw_adjustment_factor: universe.get_raw_adjustment_factor()
 		}
 	}
+	
+	pub fn refresh_time_adjustment( &self, universe: &Universe ) -> PlayerState {
+		let mut new = self.clone();
+		new.raw_adjustment_factor = universe.get_raw_adjustment_factor();
+		new
+	}
+	
 	
 	pub fn with_station( &self, station: &Station ) -> PlayerState {
 		let mut new_state = self.clone();

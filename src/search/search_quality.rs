@@ -2,9 +2,9 @@ use std::str::FromStr;
 
 #[derive(Copy, Clone)]
 pub enum SearchQuality {
-	Low,
 	Medium,
-	High
+	High,
+	Ultra
 }
 
 impl SearchQuality {
@@ -21,11 +21,11 @@ impl SearchQuality {
 	pub fn get_hop_width( &self ) -> usize {
 		// 6 is the best value.
 		
-		// higher values have shallow search paths, 
+		// higher values have shallow search areas, 
 		// which tend to miss good trade which are many hops away,
 		// and get stuck in local maxima
 		
-		// lower values have much deeper search spaces,
+		// lower values have much deeper search areas,
 		// but tend to converge and get stuck in local maxima
 		6usize
 	}
@@ -37,14 +37,14 @@ impl SearchQuality {
 //		target_computations.log(width as f64).floor() as usize
 
 		match *self {
-			SearchQuality::High => 9,
-			SearchQuality::Medium => 8,
-			SearchQuality::Low => 7
+			SearchQuality::Ultra => 9,
+			SearchQuality::High => 8,
+			SearchQuality::Medium => 7
 		}
 	}
 	
 	pub fn get_trade_range( &self ) -> f64 {
-		80f64
+		100f64
 	}
 }
 
@@ -53,13 +53,9 @@ impl FromStr for SearchQuality {
 
     fn from_str(s: &str) -> Result<SearchQuality, String> {
         match s.to_lowercase().as_str() {
-            "low" => Ok(SearchQuality::Low),
-            "med" => Ok(SearchQuality::Medium),
-            "high" => Ok(SearchQuality::High),
-            "medium" => Ok(SearchQuality::Medium),
-            "l" => Ok(SearchQuality::Low),
-            "m" => Ok(SearchQuality::Medium),
-            "h" => Ok(SearchQuality::High),
+            "m" | "med" => Ok(SearchQuality::Medium),
+            "h" | "high" => Ok(SearchQuality::High),
+            "u" | "ultra" => Ok(SearchQuality::Ultra),
             _ => Err( format!("Unknown enum variant '{}'", s) ),
         }
     }

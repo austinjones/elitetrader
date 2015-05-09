@@ -12,7 +12,9 @@ pub struct System {
 	pub x: f64,
 	pub y: f64,
 	pub z: f64,
-	pub stations: Vec<Station>
+	pub needs_permit: bool,
+	pub stations: Vec<Station>,
+	pub updated_at: u64
 //	faction: Option<String>,
 //	population: Option<u64>,
 //	government: Option<String>,
@@ -20,8 +22,6 @@ pub struct System {
 //	state: Option<String>,
 //	security: Option<String>,
 //	primary_economy: Option<String>,
-//	needs_permit: Option<u8>,
-//	updated_at: u64
 }
 
 impl Index<f64> for System {
@@ -55,6 +55,8 @@ impl System {
 	}
 }
 
+pub const DEFAULT_STATION_DISTANCE : u32 = 1000u32;
+
 #[derive(RustcEncodable, RustcDecodable, Debug, Clone)]
 pub struct Station {
 //	pub id: u32,
@@ -63,8 +65,10 @@ pub struct Station {
 	pub station_name: String,
 	pub max_landing_pad_size: ShipSize,
 	pub distance_to_star: Option<u32>,
+//	pub time_to_station: f64,
 	pub listings: Vec<Listing>,
-	pub prohibited_commodities: Vec<u8>
+	pub prohibited_commodities: Vec<u8>,
+	pub updated_at: u64
 //	faction: Option<String>,
 //	government: Option<String>,
 //	allegiance: Option<String>,
@@ -76,8 +80,7 @@ pub struct Station {
 //	has_shipyard: Option<u8>,
 //	import_commodities: Box<Vec<String>>,
 //	export_commodities: Box<Vec<String>>,
-//	economies: Box<Vec<String>>,
-//	updated_at: u32,
+//	economies: Box<Vec<String>>,,
 }
 
 impl Identified<u32> for Station { 
@@ -94,8 +97,8 @@ pub struct Listing {
 	pub supply: u32,
 	pub buy_price: u16,
 	pub sell_price: u16,
+	pub collected_at: u64
 //	pub demand: u32,
-//	collected_at: u32,
 //	update_count: u16
 }
 
