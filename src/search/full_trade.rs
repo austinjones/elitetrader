@@ -12,7 +12,7 @@ pub struct FullTrade<'a> {
 	pub unit: UnitTrade<'a>,
 	pub profit_total: u32,
 	pub used_cargo: u32,
-	pub profit_per_min: Option<f64>,
+	pub profit_per_min: f64,
 	pub is_valid: bool,
 	state: PlayerState
 }
@@ -50,8 +50,8 @@ impl<'a> FullTrade<'a> {
 }
 
 impl<'a> FullTrade<'a> {
-	pub fn profit_per_min( unit: &UnitTrade, used_cargo: u32 ) -> Option<f64> {
-		unit.profit_per_ton_per_min.map( |v| v*used_cargo as f64 )
+	pub fn profit_per_min( unit: &UnitTrade, used_cargo: u32 ) -> f64 {
+		unit.profit_per_ton_per_min * (used_cargo as f64)
 	}
 	
 	pub fn used_cargo( state: &PlayerState, buy: &Listing ) -> u32 {

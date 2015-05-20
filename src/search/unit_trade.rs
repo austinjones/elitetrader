@@ -7,6 +7,8 @@ use data::IndexedUniverse;
 use search::player_state::PlayerState;
 use search::time_estimate::TimeEstimate;
 
+use util::scored_buf::Scored;
+
 #[derive(Clone)]
 pub struct UnitTrade<'a> {
 	pub commodity_name: String,
@@ -26,8 +28,7 @@ pub struct UnitTrade<'a> {
 	pub is_prohibited: bool,
 
 	pub profit_per_ton: u32,
-	// todo: remove this option? seems weird...
-	pub profit_per_ton_per_min: Option<f64>,
+	pub profit_per_ton_per_min: f64,
 	
 	pub normalized_time : TimeEstimate,
 	pub adjusted_time: TimeEstimate
@@ -84,10 +85,6 @@ impl<'b> UnitTrade<'b> {
 		}
 	}
 	
-	pub fn score( &self ) -> Option<f64> {
-		self.profit_per_ton_per_min
-	}
-	
 	pub fn with_sell_price( &self, sell_price: u16 ) -> UnitTrade<'b> {
 		let mut new = self.clone();
 		let mut sell = self.sell.clone();
@@ -118,25 +115,31 @@ impl<'b> UnitTrade<'b> {
 		buy.supply > 0 
 			&& buy.buy_price != 0
 			&& buy.buy_price < sell.sell_price 
-			&& buy.commodity == sell.commodity
+			&& buy.commodity.commodity_id == sell.commodity.commodity_id
 	}
 	
 	pub fn is_prohibited( commodity: &Commodity, sell_station: &Station ) -> bool {
 		sell_station.prohibited_commodities.contains( &commodity.commodity_id )
 	}
 	
-	pub fn profit_per_ton_per_min( buy: &Listing, sell: &Listing, distance_in_seconds: f64  ) -> Option<f64> {
+	pub fn profit_per_ton_per_min( buy: &Listing, sell: &Listing, distance_in_seconds: f64  ) -> f64 {
 		if !UnitTrade::is_valid( buy, sell ) {
-			return None;
+			return 0f64;
 		}
 		
-		let profit_total = UnitTrade::profit_per_ton( buy, sell );
+		let profit_per_ton = UnitTrade::profit_per_ton( buy, sell );
 		let profit_per_min = match distance_in_seconds {
-			0f64 => 60f64 * profit_total as f64,
-			_ => 60f64 * profit_total as f64 / distance_in_seconds
+			0f64 => 60f64 * profit_per_ton as f64,
+			_ => 60f64 * profit_per_ton as f64 / distance_in_seconds
 		};
 		
-		Some( profit_per_min )
+		profit_per_min
+	}
+}
+
+impl<'a> Scored<f64> for UnitTrade<'a> {
+	fn score( &self ) -> f64 {
+		self.profit_per_ton_per_min
 	}
 }
 
