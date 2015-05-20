@@ -181,7 +181,8 @@ fn run_debug( universe: &Universe, state_in: &PlayerState, search_quality: Searc
 	for i in 0..hops {
 		let mut search = SearchStation::new( state.clone(), search_quality.clone() );
 		match search.next_trades(&iuniverse).iter().next() {
-			Some(trade) => {
+			Some(result) => {
+				let trade = &result.trade;
 				profit_total += trade.profit_total;
 				time_total += trade.unit.normalized_time.time_total;
 				
@@ -256,18 +257,20 @@ fn run_search( universe: &mut Universe, state_in: &PlayerState, search_quality: 
 		
 		let iuniverse = IndexedUniverse::calculate( universe );
 		let mut search = SearchStation::new( player_state.clone(), search_quality );
-		let mut trades = search.next_trades(&iuniverse);
+		let mut results = search.next_trades(&iuniverse);
 		
 		let mut accepted_trade = None;
 		
-		'trade: for trade in trades.drain() {
+		'trade: for result in results.drain() {
+			let trade = result.trade.clone();
 			let trade_state = trade.state_after_trade();
-			let expected_profit_per_min = trade.profit_per_min.unwrap_or(0f64);
+			let expected_profit_per_min = trade.profit_per_min;
 			let expected_minutes = trade.unit.adjusted_time.time_total / 60f64;
 			
-			println!("hop {}:\t{} [{}]", i,
+			println!("hop {}:\t{} [{}], {} profit/min from route", i,
 				trade.unit.buy_system.system_name,
-				trade.unit.buy_station.station_name);
+				trade.unit.buy_station.station_name,
+				NumericUnit::new_string( result.profit_per_min(), &"cr".to_string()) );
 			
 			println!("");
 			
@@ -288,21 +291,20 @@ fn run_search( universe: &mut Universe, state_in: &PlayerState, search_quality: 
 				NumericUnit::new_string( trade_state.credit_balance, &"cr".to_string()) );
 			
 			println!("");
-			println!("expect:\t{} profit/min over {:.1} mins", 
+			println!("expect:\t{} profit/min from trade over {:.1} mins", 
 					NumericUnit::new_string( expected_profit_per_min, &"cr".to_string()),
 					expected_minutes);
-
 							
 			println!("\t{} profit/ton for {} tons",
 				NumericUnit::new_string( trade.unit.profit_per_ton, &"cr".to_string()),
 				trade.used_cargo);
 			
-			println!("\t{:.1} ly to system [{:.1} mins]",
+			println!("\t{:.0} ly to system [{:.1} mins]",
 				trade.unit.adjusted_time.distance_to_system,
 				trade.unit.adjusted_time.time_to_system / 60f64
 			);
 			
-			println!("\t{:.1} ls to station [{:.1} mins]",
+			println!("\t{:.0} ls to station [{:.1} mins]",
 				trade.unit.adjusted_time.distance_to_station,
 				trade.unit.adjusted_time.time_to_station / 60f64
 			);

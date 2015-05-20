@@ -397,7 +397,7 @@ impl Universe {
 		
 		let factor = ratios / n as f64;
 		
-		println!("Got adjustment factor {:.2}", factor);
+//		println!("Got adjustment factor {:.2}", factor);
 		factor
 	}
 }
