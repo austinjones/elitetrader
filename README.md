@@ -33,7 +33,7 @@ top few trades from those stations are calculated, and so on.
 From all the possible trade routes, the first trade from 
 the best route is presented to you.
 
-The Search Quality flag -q affects the depth of the search process.
+The Search Quality flag **-q** (Med|High|Ultra) affects the depth of the search process.
 
 Possible trades are scored by their total profit per minute,
 which the program estimates based on your ship's jump range.
