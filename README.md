@@ -50,16 +50,16 @@ hop 1:	Peraesii [Giger Hub]
 
 buy:	216x Palladium [Metals]
 sell:	Chono [Siddha Ring]
-248.9 Kcr profit for balance 15.25 Mcr
+        248.9 Kcr profit for balance 15.25 Mcr
 
 expect:	28.0 Kcr profit/min over 9.1 mins
-1.2 Kcr profit/ton for 216 tons
-25.8 ly to system, 9 ls to station
+        1.2 Kcr profit/ton for 216 tons
+        25.8 ly to system, 9 ls to station
 
 wait:	press <enter> once trade is complete.
 
 actual:	29.1 Kcr per min over 8.6 minutes
-5.82% faster than expected
+        5.82% faster than expected
 -------------------------------------------------------------------
 ```
 
