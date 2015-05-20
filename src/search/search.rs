@@ -1,5 +1,9 @@
 //TODO: optimize route cycles?
 
+use std::fmt::Debug;
+use std::fmt::Formatter;
+use std::fmt::Error;
+
 use rand::{thread_rng, Rng};
 use std::collections::HashMap;
 
@@ -11,6 +15,7 @@ use search::unit_trade::UnitTrade;
 use search::search_quality::SearchQuality;
 use search::player_state::PlayerState;
 
+use util::num_unit::NumericUnit;
 use util::scored_buf::*;
 
 pub struct SearchCache<'a> {
@@ -121,9 +126,7 @@ impl<'a> SearchCache<'a> {
 				}
 				
 				let trade = UnitTrade::new( &iuniverse, &state, &buy, *sell);
-				let score = trade.profit_per_ton;
-				
-				trade_buffer.push( trade, score );
+				trade_buffer.push_scored( trade );
 			}
 		}
 		
@@ -175,6 +178,10 @@ impl<'a> SearchResult<'a> {
 	fn fudge( val: f64, fudge_factor: f64 ) -> f64 {
 		val * thread_rng().gen_range( 1f64 - fudge_factor, 1f64 + fudge_factor )
 	}
+	
+	pub fn profit_per_min( &self ) -> f64 {
+		60f64 * self.profit_total as f64 / self.time_total
+	}
 }
 
 impl<'a> Scored<f64> for SearchResult<'a> {
@@ -186,6 +193,19 @@ impl<'a> Scored<f64> for SearchResult<'a> {
 		
 		val
 //		SearchResult::fudge( val, 0.02 )
+	}
+}
+
+impl<'a> Debug for SearchResult<'a> {
+	fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
+		let str = format!( "{} profit in {:.2} minutes, {} profit/min -- {:?}",
+			NumericUnit::new_string( self.profit_total, &"cr".to_string() ),
+			self.time_total / 60f64,
+			NumericUnit::new_string( 60f64 * self.profit_total as f64 / self.time_total, &"cr".to_string() ),
+			self.trade.unit
+		);
+		
+		formatter.write_str( &str )
 	}
 }
 
@@ -207,7 +227,7 @@ impl<'a> SearchStation {
 		}
 	}
 	
-	pub fn next_trades(&mut self, iuniverse: &'a IndexedUniverse ) -> Vec<FullTrade<'a>> {
+	pub fn next_trades(&mut self, iuniverse: &'a IndexedUniverse ) -> Vec<SearchResult<'a>> {
 		let depth = self.search_quality.get_depth();
 		
 		let mut cache = SearchCache::new();
@@ -215,8 +235,7 @@ impl<'a> SearchStation {
 		let trades = self.next_trades_recurse( iuniverse, &mut cache, depth );
 		match trades {
 			Some(mut buffer) => {
-				let t = buffer.sort_mut();
-				t.iter().map(|e| e.trade.clone() ).collect()
+				buffer.sort_mut()
 			},
 			None => Vec::new()
 		}
