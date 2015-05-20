@@ -67,33 +67,35 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 		self.deque.clear();
 	}
 	
-	pub fn push( &mut self, value: V, score: K ) -> bool {
+	pub fn push( &mut self, value: V, score: K ) {
 		let len = self.deque.len();
+		let mut remove = ScoredItem { score: score, value: value };
+		
 		if len < self.size || len == 0 {
-			self.deque.push_front( ScoredItem{ score: score, value: value }  );
-			return true;
+			self.deque.push_front( remove );
+			return;
 		}
 		
-		let compare = self.deque.pop_back().unwrap();
-		let outlier = match self.sort {
-			Sort::Descending => score > compare.score,
-			Sort::Ascending => score < compare.score
-		};
-		
-		let add = match outlier {
-			true => ScoredItem { score: score, value: value },
-			false => compare
-		};
-		
-		self.deque.push_front( add );
-		
-		outlier
+		for _ in 0..len {
+			let compare = self.deque.pop_back().unwrap();
+			let keep = match self.sort {
+				Sort::Descending => remove.score < compare.score,
+				Sort::Ascending => remove.score > compare.score
+			};
+			
+			if keep {
+				self.deque.push_front( compare );
+			} else {
+				self.deque.push_front( remove );
+				remove = compare;
+			}
+		}
 	}
 	
-	pub fn push_opt( &mut self, value: V, score: Option<K> ) -> bool {
+	pub fn push_opt( &mut self, value: V, score: Option<K> ) {
 		match score {
 			Some( k ) => self.push( value, k ),
-			None => false
+			None => {}
 		}
 	}
 	
