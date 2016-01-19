@@ -1,4 +1,5 @@
 pub mod options;
+mod search_cycle;
 
 mod search_quality;
 pub use self::search_quality::SearchQuality;
@@ -7,6 +8,9 @@ mod search;
 pub use self::search::SearchStation;
 pub use self::search::SearchTrade;
 pub use self::search::SearchResult;
+
+mod search_cache;
+pub use self::search_cache::SearchCache;
 
 mod unit_trade;
 pub use self::unit_trade::UnitTrade;
