@@ -1,4 +1,5 @@
 use rustc_serialize::*;
+use csv;
 
 use std::io::Write;
 use std::fs::File;
@@ -13,6 +14,8 @@ use flate2::read::GzDecoder;
 
 use hyper::Client;
 use hyper::header::*;
+use std::time::Duration;
+
 
 pub fn get_base_directory() -> PathBuf {
 	match home_dir() {
@@ -42,6 +45,24 @@ pub fn read_json<T: Decodable>( path: &Path ) -> T {
 	}
 }
 
+pub fn read_text_from_file( file: &mut File ) -> String {
+	let mut s = String::new();
+	file.read_to_string(&mut s).unwrap();
+	
+	s
+}
+
+pub fn read_json_from_file<T: Decodable>( file: &mut File ) -> T {
+	let mut s = String::new();
+	file.read_to_string(&mut s).unwrap();
+	
+//	println!("Decoding file {}", path.to_str().unwrap() );
+	match json::decode(&s) {
+		Ok(result) => result,
+		Err(reason) => panic!("Failed to parse file, reason: {}", reason)
+	}
+}
+
 pub fn write_json<T: Encodable>( path: &Path, data: &T ) {
 	let mut file = match File::create( path ) {
 		Ok(file) => file,
@@ -60,8 +81,10 @@ pub fn write_json<T: Encodable>( path: &Path, data: &T ) {
 	}; 
 }
 
-pub fn http_read_json<T: Decodable>( url: &String ) -> T {
+fn http_read(url: &String) -> String {
 	let mut client = Client::new();
+	client.set_read_timeout(Some(Duration::new(600,0)));
+	client.set_write_timeout(Some(Duration::new(600,0)));
 	let mut res = client.get(url)
 		.header(
 			AcceptEncoding(
@@ -80,7 +103,7 @@ pub fn http_read_json<T: Decodable>( url: &String ) -> T {
 	
 	let mut body = String::new();
 	
-    let mut decoder = match GzDecoder::new(bytes.as_slice()) {
+    let mut decoder = match GzDecoder::new(&bytes[..]) {
     	Ok(v) => v,
     	Err(reason) => panic!("Failed to initalize Gzip decoder for HTTP download: {}", reason)
     };
@@ -88,10 +111,26 @@ pub fn http_read_json<T: Decodable>( url: &String ) -> T {
     match decoder.read_to_string( &mut body ) {
     	Err(reason) => panic!("Failed to unzip contents: {}", reason),
     	_ => {}
-    };
+    }
+    
+    body
+}
+
+pub fn http_read_json<T: Decodable>( url: &String ) -> T {
+	let body = http_read( url );
     
     match json::decode(&body) {
 		Ok(result) => result,
 		Err(reason) => panic!("Failed to parse response from URL {}, reason: {}", url, reason)
 	}
+}
+
+pub fn http_read_csv<T: Decodable>( url: &String, has_headers: bool ) -> Vec<T> {
+	let body = http_read( url );
+	
+    let mut rdr = csv::Reader::from_string(body).has_headers( has_headers );
+	rdr.decode()
+		.filter(|e| e.is_ok() )
+		.map(|e| e.unwrap() )
+		.collect::<Vec<T>>()
 }
