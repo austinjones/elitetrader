@@ -1,5 +1,8 @@
 use util::map_list::MapList;
 
+
+use data::trader::System;
+use data::trader::Station;
 use data::trader::Listing;
 use data::trader::Identified;
 
@@ -27,7 +30,7 @@ impl<'a> ListingOptions<'a> {
 		}
 	}
 	
-	pub fn by_commodity( &self ) -> MapList<u8, &'a Listing> {
+	pub fn by_commodity( &self ) -> MapList<u16, &'a Listing> {
 		let mut map = MapList::new();
 		
 		for trade in &self.nodes {
@@ -36,7 +39,100 @@ impl<'a> ListingOptions<'a> {
 		
 		map
 	}
+	
+	pub fn len( &self ) -> usize {
+		self.nodes.len()
+	}
 }
 
 pub type BuyOptions<'a> = ListingOptions<'a>;
+impl<'a> BuyOptions<'a> {
+	pub fn buys_from_systems( systems: Vec<&System> ) -> BuyOptions {
+		let mut ret = BuyOptions::default();
+		
+		for system in systems {
+			for station in &*system.stations {
+				for listing in &station.listings {
+					if listing.is_buy() {
+						ret.push( listing );
+					}
+				}
+			}
+		}
+		
+		ret
+	}
+	
+	pub fn buys_from_system( system: &System ) -> BuyOptions {
+		let mut ret = BuyOptions::default();
+		
+		for station in &*system.stations {
+			for listing in &station.listings {
+				if listing.is_buy() {
+					ret.push( listing );
+				}
+			}
+		}
+		
+		ret
+	}
+	
+	pub fn buys_from_station( station: &Station ) -> BuyOptions {
+		let mut ret = BuyOptions::default();
+		
+		for listing in &station.listings {
+			if listing.is_buy() {
+				ret.push( listing );
+			}
+		}
+		
+		ret
+	}
+}
+
 pub type SellOptions<'a> = ListingOptions<'a>;
+impl<'a> SellOptions<'a> {
+		pub fn sells_from_systems( systems: Vec<&System> ) -> SellOptions {
+		let mut ret = SellOptions::default();
+		
+		for system in systems {
+			for station in &*system.stations {
+				for listing in &station.listings {
+					if listing.is_sell() {
+						ret.push( listing );
+					}
+				}
+			}
+		}
+		
+		ret
+	}
+	
+	pub fn sells_from_system( system: &System ) -> SellOptions {
+		let mut ret = SellOptions::default();
+		
+		for station in &*system.stations {
+			for listing in &station.listings {
+				if listing.is_sell() {
+					ret.push( listing );
+				}
+			}
+		}
+		
+		ret
+	}
+	
+	pub fn sells_from_station( station: &Station ) -> SellOptions {
+		let mut ret = SellOptions::default();
+		
+		for listing in &station.listings {
+			if listing.supply > 0 {
+				if listing.is_sell() {
+					ret.push( listing );
+				}
+			}
+		}
+		
+		ret
+	}
+}
