@@ -1,13 +1,14 @@
 // todo: delete old universe cachefiles
-#![feature(custom_derive)]
-#![feature(collections)]
-#![feature(core)]
-#![feature(convert)]
-#![feature(path_ext)]
-#![feature(std_misc)]
-#![feature(fs_time)]
+//#![feature(custom_derive)]
+//#![feature(collections)]
+//#![feature(core)]
+//#![feature(convert)]
+//#![feature(path_ext)]
+//#![feature(std_misc)]
+//#![feature(fs_time)]
 
 extern crate rustc_serialize;
+extern crate csv;
 extern crate spatial;
 extern crate core;
 extern crate rand;
@@ -16,6 +17,10 @@ extern crate flate2;
 extern crate time;
 extern crate getopts;
 extern crate num;
+extern crate filetime;
+extern crate crossbeam;
+extern crate num_cpus;
+extern crate statistical;
 
 mod arguments;
 mod data;
@@ -24,6 +29,7 @@ mod persist;
 mod search;
 mod util;
 mod user_input;
+mod processor;
 
 use time::PreciseTime;
 use std::str::FromStr;
@@ -33,12 +39,13 @@ use arguments::Arguments;
 use search::SearchStation;
 use search::PlayerState;
 use search::SearchQuality;
+use search::SearchCache;
 use util::num_unit::*;
 use messages::*;
 use data::TimeAdjustment;
 use data::PriceAdjustment;
 use data::Universe;
-use data::IndexedUniverse;
+use data::EdceData;
 
 use user_input::prompt_value;
 
@@ -48,7 +55,7 @@ pub const CACHE_FILENAME : &'static str = concat!("elite_universe_", env!("CARGO
 
 fn options() -> Options {
 	let mut opts = Options::new();
-//	opts.optopt("s", "system", "set current system name", "LTT 826");
+	opts.optopt("s", "system", "set current system name", "LTT 826");
 	opts.optopt("t", "station", "current station name", "GitHub");
 	opts.optopt("c", "cargo", "maximum cargo capacity in tons. find this in your right cockpit panel's Cargo tab.", "216");
 	opts.optopt("r", "range", "maximum laden jump range in light years.  find this in your outfitting menu.", "18.52");
@@ -57,9 +64,13 @@ fn options() -> Options {
 	opts.optopt("q", "quality", "search quality setting [med|high|ultra]", "med");
 	opts.optopt("p", "shipsize", "current ship size (small|med|large)", "large");
 	opts.optopt("d", "debug", "searches to the given hop length and prints stats", "12");
+	opts.optopt("C", "edce", "enables Elite Dangerous Companion Emulator integration - \
+		automatically sets all user state (except for jump range) when enabled", 
+		"<full path to emulator directory>");
 	
 	opts.optflag("i", "timetables", "prints time tables");
 	opts.optflag("h", "help", "prints this help menu");
+	opts.optflag("A", "autoaccept", "automatically accepts trade options");
 	opts
 }
 
@@ -98,9 +109,11 @@ fn main() {
 	println!("Loading Elite Dangerous universe data...");
 	println!("");
 	
-	let arguments = Arguments::collect( &opt_vals );
+	let edce_data = EdceData::generate_opt( &opt_vals.opt_str("C") );
+	let arguments = Arguments::collect( &opt_vals, &edce_data );
+
 	let mut universe = Universe::load(&arguments.ship_size);
-	let player_state = PlayerState::new( &arguments, &universe, &IndexedUniverse::calculate( &universe ) );
+	let player_state = PlayerState::new( &arguments, &universe );
 //	let mut system_name = arguments.system;
 //	let mut system = None;
 //	while !system.is_some() {
@@ -120,15 +133,19 @@ fn main() {
 	
 	match opt_vals.opt_str("d") {
 		Some(str) => {
-			let depth = match usize::from_str( str.as_str() ) {
+			let depth = match usize::from_str( &str[..] ) {
 				Ok(v) => v,
 				Err(reason) => panic!("Invalid debug depth '{}': {}", str, reason)
 			};
 			
-			run_debug( &universe, &player_state, arguments.search_quality, depth );
+			if depth > 0 {
+				run_debug( &mut universe, &player_state, arguments.search_quality, depth );
+			} else {
+				run_diagnostic( &mut universe, &player_state, arguments.search_quality );
+			}
 		},
 		None => {
-			run_search( &mut universe, &player_state, arguments.search_quality );
+			run_search( &mut universe, &arguments, &player_state, arguments.search_quality );
 		}
 	}
 }
@@ -138,7 +155,7 @@ fn run_timetables( config: &Matches ) {
 		Some(v) => v,
 		None => prompt_value( "r", "current laden jump range in light years" )
 	};
-	let jump_range = match NumericUnit::from_str( jump_range_in.as_str() ) {
+	let jump_range = match NumericUnit::from_str( &jump_range_in[..] ) {
 		Ok(v) => v.to_num(),
 		Err(reason) => panic!("Invalid jump range '{}' - {}", jump_range_in, reason)
 	};
@@ -160,7 +177,44 @@ fn run_timetables( config: &Matches ) {
 	}
 }
 
-fn run_debug( universe: &Universe, state_in: &PlayerState, search_quality: SearchQuality, hops: usize ) {
+fn run_diagnostic( universe: &mut Universe, state_in: &PlayerState, search_quality: SearchQuality ) {
+	let hop_width = search_quality.get_hop_width();
+	let depth = search_quality.get_depth();
+	let total_routes = hop_width.pow( depth as u32 );
+	
+	println!("Enumerating {} trades per station to a depth of {} hops ...", hop_width, depth );
+	println!("Total routes to examine: {}", total_routes);
+	
+	println!("{}", SEPARATOR );
+	
+	println!("\troute:\t\t\ttrade:");
+	println!("option\tpft/min\tmins\tprofit\tpft/min\tmins\tprofit\tcmdy.\tplanetary\tsystem\tstation");
+	
+	let mut search_cache = SearchCache::new();
+	let universe_snapshot = universe.snapshot();
+	let mut search = SearchStation::new( state_in.clone(), search_quality.clone() );
+	let trades = search.next_trades(&universe_snapshot, &mut search_cache);
+	
+	for (i, result) in trades.iter().enumerate() {
+		let minutes = result.time_total / 60f64;
+		let profit_per_min = result.profit_per_min();
+		println!("{}\t{:.0}\t{:.2}\t{}\t{:.0}\t{:.2}\t{}\t{}\t{}\t{}\t{}",
+			i,
+			profit_per_min,
+			minutes,
+			result.profit_total,
+			result.trade.profit_per_min,
+			result.trade.unit.adjusted_time.time_total/60f64,
+			result.trade.profit_total,
+			result.trade.unit.commodity_name,
+			if result.trade.unit.sell_station.is_planetary { "planetary" } else { "station" }, 
+			result.trade.unit.sell_system.system_name,
+			result.trade.unit.sell_station.station_name,
+		);
+	}
+}
+
+fn run_debug( universe: &mut Universe, state_in: &PlayerState, search_quality: SearchQuality, hops: usize ) {
 	let hop_width = search_quality.get_hop_width();
 	let depth = search_quality.get_depth();
 	let total_routes = hop_width.pow( depth as u32 );
@@ -172,37 +226,50 @@ fn run_debug( universe: &Universe, state_in: &PlayerState, search_quality: Searc
 	
 	let mut profit_total = 0;
 	let mut time_total = 0f64;
-	println!("hop\tprofit\tly\tls\tminutes\tprofit/min\tcargo\tcmdy.\tsystem\tstation");
+	println!("hop\tms\tcache\tmins\tpft/min\tprofit\ttrips\tly\tls\tcargo\tcmdy.\tsystem\tstation");
 	
 	let mut state = state_in.clone();
-	
-	let iuniverse = IndexedUniverse::calculate( universe );
-	
+	let search_cache = SearchCache::new();
+		
 	for i in 0..hops {
+		let universe_snapshot = universe.snapshot();
 		let mut search = SearchStation::new( state.clone(), search_quality.clone() );
-		match search.next_trades(&iuniverse).iter().next() {
+			let process_start = time::precise_time_s();
+		let trades = search.next_trades(&universe_snapshot, &search_cache);		
+			let process_end = time::precise_time_s();
+			
+		let process_time_ms = 1000f64 * (process_end - process_start) ;
+//		for (index, result) in trades.iter().enumerate() {
+//			println!("r{}: {:?}", index, result );
+//		}
+		match trades.iter().next() {
 			Some(result) => {
+//				println!("SearchCache has {} entries", search_cache.trade_cache.len() );
 				let trade = &result.trade;
 				profit_total += trade.profit_total;
 				time_total += trade.unit.normalized_time.time_total;
 				
 				let minutes = trade.unit.normalized_time.time_total / 60f64;
 				let profit_per_min = trade.profit_total as f64 / minutes;
-				
-				println!("{}\t{}\t{:.2}\t{:.2}\t{:.2}\t{:.2}\t{}\t{}\t{}\t{}",
-					i, 
-					trade.profit_total,
-					trade.unit.normalized_time.distance_to_system,
-					trade.unit.normalized_time.distance_to_station,
+				println!("{}\t{:.0}\t{}\t{:.2}\t{:.0}\t{}\t{:.1}\t{:.2}\t{}\t{}\t{}\t{}\t{}",
+					i,
+					process_time_ms,
+					search_cache.len(),
 					minutes,
 					profit_per_min,
+					trade.profit_total,
+					trade.unit.credit_potential() as f64 / trade.profit_total as f64,
+					trade.unit.normalized_time.distance_to_system,
+					trade.unit.normalized_time.distance_to_station,
 					trade.used_cargo,
 					trade.unit.commodity_name,
+//					if trade.unit.sell_station.is_planetary { "planetary" } else { "station" }, 
 					trade.unit.sell_system.system_name,
 					trade.unit.sell_station.station_name,
 				);
 				
 				state = trade.state_after_trade();
+				universe.apply_trade(trade, &search_cache);
 			},
 			None => { println!("No trade found"); break; }
 		};
@@ -224,8 +291,7 @@ fn run_debug( universe: &Universe, state_in: &PlayerState, search_quality: Searc
 	println!("{} profit/min", NumericUnit::new_string( profit_per_min, &"cr".to_string() ));
 }
 
-fn run_search( universe: &mut Universe, state_in: &PlayerState, search_quality: SearchQuality ) {
-	
+fn run_search( universe: &mut Universe, args: &Arguments, state_in: &PlayerState, search_quality: SearchQuality ) {
 	let hop_width = search_quality.get_hop_width();
 	let depth = search_quality.get_depth();
 	let total_routes = hop_width.pow( depth as u32 );
@@ -243,47 +309,72 @@ fn run_search( universe: &mut Universe, state_in: &PlayerState, search_quality: 
 	let start_state = state_in.clone();
 	let mut player_state = state_in.clone();
 	
+	let is_edce = args.edce_path.is_some();
+	
+	let search_cache = SearchCache::new();
+	
 //	let mut price_updates = Vec::new();
 	let mut quit = false;
 	'route: while !quit {
-		
-		let search_quality = match i {
-			0 => SearchQuality::Medium,
-			_ => search_quality
-		};
-		
+//		let search_quality = match i {
+//			0 => SearchQuality::Medium,
+//			_ => search_quality
+//		};
+
 		println!("wait:\tcalculating ...");
-		println!("");
 		
-		let iuniverse = IndexedUniverse::calculate( universe );
+		let universe_snapshot = universe.snapshot();
+		
 		let mut search = SearchStation::new( player_state.clone(), search_quality );
-		let mut results = search.next_trades(&iuniverse);
+		let mut results = search.next_trades(&universe_snapshot, &search_cache);
+//		for (index, result) in results.iter().enumerate() {
+//			println!("r{}: {:?}", index, result );
+//		}
 		
 		let mut accepted_trade = None;
 		
-		'trade: for result in results.drain() {
+		'trade: for result in results.drain(..) {
 			let trade = result.trade.clone();
 			let trade_state = trade.state_after_trade();
 			let expected_profit_per_min = trade.profit_per_min;
 			let expected_minutes = trade.unit.adjusted_time.time_total / 60f64;
 			
-			println!("hop {}:\t{} [{}], {} profit/min from route", i,
-				trade.unit.buy_system.system_name,
-				trade.unit.buy_station.station_name,
-				NumericUnit::new_string( result.profit_per_min(), &"cr".to_string()) );
+			println!("{}", SEPARATOR);
+			
+			let now = time::now();
+			println!("hop {}:\t{}, estimated {} profit/min over next {:.0} minutes", 
+				i,
+				now.strftime("%l:%M%p").unwrap().to_string().trim(),
+				NumericUnit::new_string( result.profit_per_min(), &"cr".to_string()),
+				result.time_total / 60f64
+			 );
 			
 			println!("");
 			
-			println!("buy:\t{} [{}] at {} x {}",
+			println!("buy:\t{} [{}]",
+				trade.unit.buy_system.system_name,
+				trade.unit.buy_station.station_name,
+			);
+			
+			println!("\t{} [{}] at {} x {}",
 				trade.unit.sell.commodity.category,
 				trade.unit.commodity_name,
 				NumericUnit::new_string( trade.unit.buy.buy_price, &"cr".to_string() ),
 				trade.used_cargo );
+				
+			println!("supply:\t{} [{} over {:.2} hours]",
+				NumericUnit::new_string( trade.unit.buy.supply, &"tn".to_string() ),
+				NumericUnit::new_string( trade.unit.credit_potential(), &"cr".to_string() ),
+				trade.max_runs() * trade.unit.adjusted_time.time_total / 3600f64
+			);
 			
-			println!("sell:\t{} [{}] at {}",
+			println!("");
+			
+			println!("sell:\t{} [{}] at {}{}",
 				trade.unit.sell_system.system_name,
 				trade.unit.sell_station.station_name,
-				NumericUnit::new_string( trade.unit.sell.sell_price, &"cr".to_string() ) 
+				NumericUnit::new_string( trade.unit.sell.sell_price, &"cr".to_string() ),
+				if trade.unit.is_prohibited { ", Illegal Cargo!" } else { "" }
 			);
 			
 			println!("\t{} profit for balance {}",
@@ -309,43 +400,54 @@ fn run_search( universe: &mut Universe, state_in: &PlayerState, search_quality: 
 				trade.unit.adjusted_time.time_to_station / 60f64
 			);
 			
-			println!("");
-			println!("start:\tenter) to accept trade" );
-			println!("\tu) to update buy price ({})", trade.unit.buy_price);
-			println!("\tn) for new trade");
-			println!("\tq) to quit");
-			// the first trade is from the station the user is docked at
-			// so calculate it automatically
-			let str = user_input::read_line();
-			match str.as_str() {
+			if args.auto_accept {
+				accepted_trade = Some(trade); 
+				println!("");
+				break 'trade;
+			} else {
+				println!("");
+				println!("start:\tenter) to accept trade" );
+				if !is_edce {
+					println!("\tu) to update buy price ({})", trade.unit.buy_price);
+				}
+				
+				println!("\tn) for new trade");
+				println!("\tq) to quit");
+				// the first trade is from the station the user is docked at
+				// so calculate it automatically
+				let str = user_input::read_line();
+				match &str[..] {
 //					"u" | "update" => {
 //						let new_price = read_price_update();
 //						price_updates.push( PriceUpdate::new_sell_update( new_price, trade.sell ) );
 //					},
-				"u" | "update"  => {
-					let buy_price = user_input::read_price_update("buy price");
-					let supply = user_input::read_price_update("supply");
-					
-					let update = PriceAdjustment::from_buy(buy_price, supply, trade.unit.buy);
-					universe.apply_price_adjustment( &update );
-					update.save();
-					
-					println!("{}", SEPARATOR);
-					continue 'route;
-				},
-				"n" | "new"  => { 
-					println!("{}", SEPARATOR);
-					continue; 
-				},
-				"q" | "quit" => {
-					// it's technically not needed to set this,
-					// but just in case the code changes in the future,
-					// let's set it anyway.
-					quit = true;
-					
-					break 'route;
+					"u" | "update"  => {
+						let buy_price = user_input::read_price_update("buy price");
+						let supply = user_input::read_price_update("supply");
+						
+						let update = PriceAdjustment::from_buy(buy_price, supply, trade.unit.buy);
+						universe.apply_price_adjustment( &update );
+						update.save();
+						
+						search_cache.invalidate_station( trade.unit.buy_station.station_id );
+						
+						println!("{}", SEPARATOR);
+						continue 'route;
+					},
+					"n" | "new"  => { 
+						println!("{}", SEPARATOR);
+						continue; 
+					},
+					"q" | "quit" => {
+						// it's technically not needed to set this,
+						// but just in case the code changes in the future,
+						// let's set it anyway.
+						quit = true;
+						
+						break 'route;
+					}
+					_ => { accepted_trade = Some(trade); break 'trade; }
 				}
-				_ => { accepted_trade = Some(trade); break }
 			}
 		};
 		
@@ -356,16 +458,48 @@ fn run_search( universe: &mut Universe, state_in: &PlayerState, search_quality: 
 		
 		i += 1;
 		let mut trade = accepted_trade.unwrap();
+		let trade_snapshot = trade.clone();
 		
 		let start_time = PreciseTime::now();
 		println!("end:\tenter) to complete trade" );
-		println!("\tu) to update sell price ({})", trade.unit.sell_price );
+		if !is_edce {
+			println!("\tu) to update sell price ({})", trade.unit.sell_price );
+		}
 		println!("\tq) to complete route" );
 		
 		// the first trade is from the station the user is docked at
 		// so calculate it automatically
 		let str = user_input::read_line();
-		match str.as_str() {
+		
+		if let Some(edce_data) = EdceData::generate_opt( &args.edce_path ) {
+			if let Some(price_update) = edce_data.apply_edce_adjustments(universe) {
+				if price_update.station.station_id == trade.unit.sell_station.station_id {
+					let updated_active = price_update.changes.iter()
+						.filter(|change| change.get_commodity_id() == trade.unit.commodity_id)
+						.next().is_some();
+					
+					if updated_active {
+						println!("edce:\tupdated trade commodity and {} others",
+							std::cmp::max(price_update.changes.len() - 1, 0)
+						);
+					} else {
+						println!("edce:\tupdated {} commodities",
+							price_update.changes.len()
+						);
+					}
+					println!("");
+				} else if price_update.station.station_id == trade.unit.buy_station.station_id {
+					println!("edce:\tdata received was for original buy station - {}", price_update.station.station_name );
+					println!("\tplease wait a few seconds after docking before completing trade" );
+				} else if price_update.station.station_id == trade.unit.buy_station.station_id {
+					println!("edce:\tdata received was for unknown station - {}", price_update.station.station_name );
+					println!("\tyou appear to have docked at the wrong station!" );
+				}
+			}
+			
+		}
+		
+		match &str[..] {
 			"u" | "update"  => {
 					let sell_price = user_input::read_price_update("sell price");
 					
@@ -380,26 +514,28 @@ fn run_search( universe: &mut Universe, state_in: &PlayerState, search_quality: 
 		}
 		
 		let trade_state = trade.state_after_trade();
+		universe.apply_trade( &trade, &search_cache );
 		
 		let span = start_time.to( PreciseTime::now() );
 		let seconds = span.num_milliseconds() as f64 / 1000f64;
 		let minutes = span.num_milliseconds() as f64 / 60000f64;
-		let expected_minutes = trade.unit.adjusted_time.time_total as f64 / 60f64;
 		
 		let profit_per_min = trade.profit_total as f64 / minutes;
-		let ratio = minutes / expected_minutes;
 		
-		println!("actual:\t{} per min over {:.1} minutes",
-			NumericUnit::new_string( profit_per_min, &"cr".to_string()),
+		println!("actual:\t{:.1}% of expected - {} profit/min from trade",
+			100f64 * profit_per_min / trade_snapshot.profit_per_min,
+			NumericUnit::new_string( profit_per_min, &"cr".to_string()) );
+		
+		println!("\t{:.1}% of expected - {} profit per ton",
+			100f64 * trade.unit.profit_per_ton as f64 / trade_snapshot.unit.profit_per_ton as f64,
+			NumericUnit::new_string( trade.unit.profit_per_ton, &"cr".to_string()) );
+		
+		println!("\t{:.1}% of expected - {:.2} minutes",
+			100f64 * minutes / (trade_snapshot.unit.adjusted_time.time_total / 60f64),
 			minutes );
-		
-		let (compare, text) = match ratio {
-			0f64...1f64 => (100f64 * (1f64-ratio), "faster"),
-			_ => (100f64 * (ratio-1f64), "slower")
-		};
-		
-		println!("\t{:.2}% {} than expected", compare, text);
-		println!("{}", &SEPARATOR.to_string());
+		// 159% of expected - 70.2 Kcr profit/min from trade
+		// 129% of expected - 1.4 Kcr profit per ton
+		// 75% of expected - 7.2 mins travel time
 		
 		match TimeAdjustment::new( &trade, seconds ) {
 			Some(adjustment) => {
@@ -413,6 +549,7 @@ fn run_search( universe: &mut Universe, state_in: &PlayerState, search_quality: 
 		sum_minutes += minutes;
 		
 		player_state = trade_state.refresh_time_adjustment( universe );
+		println!("{}", SEPARATOR);
 	}
 	
 	let profit_per_min = match sum_minutes {
