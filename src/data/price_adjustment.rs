@@ -4,17 +4,17 @@ use time::get_time;
 
 #[derive(RustcDecodable, RustcEncodable, Clone)]
 pub struct PriceAdjustment {
-	pub buy_price: Option<u16>,
-	pub sell_price: Option<u16>,
+	pub buy_price: Option<u32>,
+	pub sell_price: Option<u32>,
 	pub supply: Option<u32>,
-	pub system_id: u16,
+	pub system_id: u32,
 	pub station_id: u32,
-	pub commodity_id: u8,
+	pub commodity_id: u16,
 	pub timestamp: u64
 }
 
 impl PriceAdjustment {
-	pub fn new( supply: u32, buy_price: u16, sell_price: u16, listing: &Listing ) -> PriceAdjustment {
+	pub fn new( supply: u32, buy_price: u32, sell_price: u32, listing: &Listing ) -> PriceAdjustment {
 		PriceAdjustment {
 			buy_price: Some(buy_price),
 			sell_price: Some(sell_price),
@@ -29,7 +29,7 @@ impl PriceAdjustment {
 		}
 	}
 	
-	pub fn from_sell( sell_price: u16, listing: &Listing ) -> PriceAdjustment {
+	pub fn from_sell( sell_price: u32, listing: &Listing ) -> PriceAdjustment {
 		PriceAdjustment {
 			buy_price: None,
 			supply: None,
@@ -41,7 +41,7 @@ impl PriceAdjustment {
 		}
 	}
 	
-	pub fn from_buy( buy_price: u16, supply: u32, listing: &Listing ) -> PriceAdjustment {
+	pub fn from_buy( buy_price: u32, supply: u32, listing: &Listing ) -> PriceAdjustment {
 		PriceAdjustment {
 			supply: Some(supply),
 			buy_price: Some(buy_price),

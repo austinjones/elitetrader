@@ -7,7 +7,7 @@ pub trait Identified<K> {
 
 #[derive(RustcEncodable, RustcDecodable, Debug, Clone)]
 pub struct System {
-	pub system_id: u16,
+	pub system_id: u32,
 	pub system_name: String,
 	pub x: f64,
 	pub y: f64,
@@ -30,8 +30,8 @@ impl Index<f64> for System {
 	}
 }
 
-impl Identified<u16> for System { 
-	fn to_id(&self) -> u16 {
+impl Identified<u32> for System { 
+	fn to_id(&self) -> u32 {
 		self.system_id
 	}
 }
@@ -60,15 +60,15 @@ pub const DEFAULT_STATION_DISTANCE : u32 = 1000u32;
 #[derive(RustcEncodable, RustcDecodable, Debug, Clone)]
 pub struct Station {
 //	pub id: u32,
-	pub system_id: u16,
+	pub system_id: u32,
 	pub station_id: u32,
 	pub station_name: String,
 	pub max_landing_pad_size: ShipSize,
 	pub distance_to_star: Option<u32>,
 //	pub time_to_station: f64,
 	pub listings: Vec<Listing>,
-	pub prohibited_commodities: Vec<u8>,
-	pub updated_at: u64
+	pub prohibited_commodities: Vec<u16>,
+	pub updated_at: u64,
 //	faction: Option<String>,
 //	government: Option<String>,
 //	allegiance: Option<String>,
@@ -81,6 +81,8 @@ pub struct Station {
 //	import_commodities: Box<Vec<String>>,
 //	export_commodities: Box<Vec<String>>,
 //	economies: Box<Vec<String>>,,
+	pub market_updated_at: Option<u64>,
+	pub is_planetary: bool,
 }
 
 impl Identified<u32> for Station { 
@@ -91,12 +93,12 @@ impl Identified<u32> for Station {
 
 #[derive(RustcEncodable, RustcDecodable, Debug, Clone)]
 pub struct Listing {
-	pub system_id: u16,
+	pub system_id: u32,
 	pub station_id: u32,
 	pub commodity: Commodity,
 	pub supply: u32,
-	pub buy_price: u16,
-	pub sell_price: u16,
+	pub buy_price: u32,
+	pub sell_price: u32,
 	pub collected_at: u64
 //	pub demand: u32,
 //	update_count: u16
@@ -104,7 +106,7 @@ pub struct Listing {
 
 impl Listing {
 	pub fn is_buy( &self ) -> bool {
-		self.supply > 0
+		self.supply > 0 && self.buy_price > 0
 	}
 	
 	pub fn is_sell( &self ) -> bool {
@@ -114,7 +116,7 @@ impl Listing {
 
 #[derive(RustcEncodable, RustcDecodable, Debug, Clone)]
 pub struct Commodity {
-	pub commodity_id: u8,
+	pub commodity_id: u16,
 	pub commodity_name: String,
 	pub category: String
 }
@@ -125,8 +127,8 @@ impl PartialEq for Commodity {
 	}
 }
 
-impl Identified<u8> for Commodity { 
-	fn to_id(&self) -> u8 {
+impl Identified<u16> for Commodity { 
+	fn to_id(&self) -> u16 {
 		self.commodity_id
 	}
 }
@@ -143,7 +145,7 @@ impl FromStr for ShipSize {
     type Err = String;
 
     fn from_str(s: &str) -> Result<ShipSize, String> {
-        match s.to_lowercase().as_str() {
+        match &s.to_lowercase()[..] {
             "small" => Ok(ShipSize::Small),
             "medium" => Ok(ShipSize::Medium),
             "large" => Ok(ShipSize::Large),

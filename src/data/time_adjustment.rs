@@ -11,10 +11,10 @@ use time::get_time;
 
 #[derive(RustcDecodable, RustcEncodable, Clone)]
 pub struct TimeAdjustment {
-	pub buy_system_id: u16,
+	pub buy_system_id: u32,
 	pub buy_station_id: u32,
 	
-	pub sell_system_id: u16,
+	pub sell_system_id: u32,
 	pub sell_station_id: u32,
 	
 	pub raw_estimate: TimeEstimate,

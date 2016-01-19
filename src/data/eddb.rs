@@ -3,7 +3,7 @@ use data::trader::Identified;
 
 #[derive(RustcDecodable, RustcEncodable, Debug, Clone)]
 pub struct SystemJson {
-	pub id: u16,
+	pub id: u32,
 	pub name: String,
 	pub x: f64,
 	pub y: f64,
@@ -19,8 +19,8 @@ pub struct SystemJson {
 //	primary_economy: Option<String>,
 }
 
-impl Identified<u16> for SystemJson { 
-	fn to_id(&self) -> u16 {
+impl Identified<u32> for SystemJson { 
+	fn to_id(&self) -> u32 {
 		self.id
 	}
 }
@@ -28,6 +28,7 @@ impl Identified<u16> for SystemJson {
 #[derive(RustcDecodable, RustcEncodable, Debug, Clone)]
 pub struct StationJson {
 	pub id: u32,
+	pub system_id: u32,
 	pub name: String,
 	pub max_landing_pad_size: Option<String>,
 	pub distance_to_star: Option<u32>,
@@ -37,7 +38,7 @@ pub struct StationJson {
 //	allegiance: Option<String>,
 //	state: Option<String>,
 //	has_blackmarket: Option<u8>,
-//	has_commodities: Option<u8>,
+//	has_market: Option<u8>,
 //	has_refuel: Option<u8>,
 //	has_rearm: Option<u8>,
 //	has_shipyard: Option<u8>,
@@ -45,8 +46,8 @@ pub struct StationJson {
 //	export_commodities: Box<Vec<String>>,
 //	economies: Box<Vec<String>>,
 	pub updated_at: u64,
-	pub system_id: u16,
-	pub listings: Vec<StationCommodityListingJson>
+	pub market_updated_at: Option<u64>,
+	pub is_planetary: Option<u8>,
 }
 
 impl Identified<u32> for StationJson { 
@@ -57,28 +58,28 @@ impl Identified<u32> for StationJson {
 
 #[derive(RustcDecodable, RustcEncodable, Debug, Clone)]
 pub struct StationCommodityListingJson {
-//	pub id: u32,
+	pub id: u32,
 	pub station_id: u32,
-	pub commodity_id: u8,
+	pub commodity_id: u16,
 	pub supply: i64,
 	pub buy_price: i32,
 	pub sell_price: i32,
-	pub collected_at: u64
-//	pub demand: u32,
-//	update_count: u16
+	pub collected_at: u64,
+	pub demand: i64,
+	pub update_count: u32
 }
 
 #[derive(RustcDecodable, RustcEncodable, Debug, Clone)]
 pub struct CommodityJson {
-	pub id: u8,
+	pub id: u16,
 	pub name: String,
 	pub category_id: u8,
 //	pub average_price: Option<u32>,
 	pub category: CommodityCategoryJson
 }
 
-impl Identified<u8> for CommodityJson { 
-	fn to_id(&self) -> u8 {
+impl Identified<u16> for CommodityJson { 
+	fn to_id(&self) -> u16 {
 		self.id
 	}
 }
@@ -89,7 +90,7 @@ pub struct CommodityCategoryJson {
 	pub name: String
 }
 
-pub fn get_stations_by_system( stations: &Vec<StationJson> ) -> HashMap<u16, Vec<&StationJson>> {
+pub fn get_stations_by_system( stations: &Vec<StationJson> ) -> HashMap<u32, Vec<&StationJson>> {
 	let mut result = HashMap::new();
 	
 	for s in stations.iter() {		
@@ -99,6 +100,26 @@ pub fn get_stations_by_system( stations: &Vec<StationJson> ) -> HashMap<u16, Vec
 		};
 						
 		let mut vec = match result.get_mut( &s.system_id ) {
+			Some(vbox) => vbox,
+			None => panic!( "Should have been inserted above" )
+		};
+		
+		vec.push( s );
+	}
+	
+	result
+}
+
+pub fn get_listings_by_station( listings: &Vec<StationCommodityListingJson> ) -> HashMap<u32, Vec<&StationCommodityListingJson>> {
+	let mut result = HashMap::new();
+	
+	for s in listings.iter() {		
+		match result.get_mut( &s.station_id ) {
+			None => { result.insert( s.station_id, Vec::new() ); },
+			_ => {}
+		};
+						
+		let mut vec = match result.get_mut( &s.station_id ) {
 			Some(vbox) => vbox,
 			None => panic!( "Should have been inserted above" )
 		};
