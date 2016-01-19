@@ -5,7 +5,16 @@ and calculates the best possible trade route.\n\
 It is useful to set the -c Credit, -r Jump Range, -p Ship Size, and \n\
 -m Min Balance args on the command line, as they don't change often.\n\
 The tool will interactively prompt you for any remaining information,\n\
-such as the Current Station and Credit Balance.\n\
+such as the Current Station and Credit Balance. \n\
+\n\
+Alternatively, you can provide the --edce parameter with the path to an \n\
+installed copy of Elite Dangerous Companion Emulator. With EDCE integration, 
+EliteTrader can automatically load your player state at startup, and\n\
+commodity prices during a trade.  It is useful to set the --autoaccept\n\
+parameter when EDCE is configured, as you never need to fix a buy price.\n\
+Note: you need python 3, and the Requests library (pip install requests)\n\
+installed, and must configure the client outside of Elite Trader.  \n\
+See: https://github.com/Andargor/edce-client for setup instructions.\n\
 \n\
 Set Minimum Balance argument carefully.  You should allow your rebuy\n\
 cost plus a full load of expensive cargo, or two of each to be safe.\n\
@@ -28,22 +37,38 @@ Once the trade is complete, we press <enter> and the credit/min\n\
 analysis is printed.\n\
 \n\
 -------------------------------------------------------------------\n\
-Starting route search from Peraesii [Giger Hub] ...\n\
-hop 1:	Peraesii [Giger Hub]\n\
-\n\
-buy:	216x Palladium [Metals]\n\
-sell:	Chono [Siddha Ring]\n\
-248.9 Kcr profit for balance 15.25 Mcr\n\
-\n\
-expect:	28.0 Kcr profit/min over 9.1 mins\n\
-1.2 Kcr profit/ton for 216 tons\n\
-25.8 ly to system, 9 ls to station\n\
-\n\
-wait:	press <enter> once trade is complete.\n\
-\n\
-actual:	29.1 Kcr per min over 8.6 minutes\n\
-5.82% faster than expected\n\
+Enumerating 7 trades per station to a depth of 9 hops ...\n\
+Total routes to examine: 40.35 M\n\
+-------------------------------------------------------------------\n\
+wait:   calculating ...\n\
 -------------------------------------------------------------------
+hop 0:  11:15AM, estimated 45.6 Kcr profit/min over next 72 minutes\n\
 \n\
-We made 29 thousand credits per minute over 8.6 minutes.\n\
+buy:    Peraesii [Giger Hub]\n\
+        Metals [Palladium] at 13.8 Kcr x 216\n\
+supply: 24.1 Ktn [48.40 Mcr over 18.12 hours]\n\
+\n\
+sell:   Maiki [Zenbei Port] at 15.8 Kcr\n\
+        434.6 Kcr profit for balance 150.43 Mcr\n\
+\n\
+expect: 44.5 Kcr profit/min from trade over 9.8 mins\n\
+        2.0 Kcr profit/ton for 216 tons\n\
+        61 ly to system [5.2 mins]\n\
+        925 ls to station [4.5 mins]\n\
+\n\
+start:  enter) to accept trade\n\
+        u) to update buy price (13762)\n\
+        n) for new trade\n\
+        q) to quit\n\
+\n\
+end:    enter) to complete trade\n\
+        u) to update sell price (15774)\n\
+        q) to complete route\n\
+\n\
+actual: 142.0% of expected - 63.2 Kcr profit/min from trade\n\
+        100.0% of expected - 2.0 Kcr profit per ton\n\
+        70.4% of expected - 6.87 minutes\n\
+-------------------------------------------------------------------\n\
+\n\
+We made 63 thousand credits per minute over 7 minutes.\n\
 Give it a try with your ship!\n";
