@@ -56,26 +56,19 @@ pub fn load_adjustments<A: Decodable>( category: &str ) -> Vec<A> {
 	let mut vec = Vec::new();
 	
 	let prefix_string = "adjustment_".to_string() + category + ".";
-	let prefix = prefix_string.as_str();
+	let prefix = &prefix_string[..];
 	
 	match read_dir( get_adjustments_dir() ) {
 		Ok(results) => {
 			for entry in results {
 				let entry = match entry {
 					Ok(o) => o,
-					Err(reason) => { 
+					Err(_) => { 
 						continue; 
 					}
 				};
 				
 				let path = entry.path();
-				let path_str = match path.to_str() {
-					Some(p) => p,
-					None => { 
-						continue; 
-					}
-				};
-				
 				let filename = match path.file_name() {
 					Some(f) => match f.to_str() {
 						Some(f2) => f2.to_string(),
@@ -104,6 +97,6 @@ pub fn load_adjustments<A: Decodable>( category: &str ) -> Vec<A> {
 	
 	vec.sort_by(|a,b| a.filename.partial_cmp(&b.filename).expect("Failed to compare adjustment filename order") );
 	// workaround for a lifetime problem
-	let newvec = vec.drain().map(|e| e.adjustment).collect();
+	let newvec = vec.drain(..).map(|e| e.adjustment).collect();
 	newvec
 }

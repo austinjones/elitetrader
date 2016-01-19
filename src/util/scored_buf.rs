@@ -5,7 +5,6 @@ use std::collections::VecDeque;
 
 use std::fmt::Debug;
 
-
 pub struct ScoredCircularBuffer<K,V> {
 	size: usize,
 	deque: VecDeque<ScoredItem<K,V>>,
@@ -14,6 +13,7 @@ pub struct ScoredCircularBuffer<K,V> {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
 pub enum Sort {
 	Ascending,
 	Descending
@@ -23,6 +23,7 @@ pub trait Scored<K> {
 	fn score(&self) -> K;
 }
 
+#[derive(Clone)]
 pub struct ScoredItem<K, V> {
 	pub score: K,
 	pub value: V
@@ -33,6 +34,39 @@ impl<K: PartialOrd<K> + Debug, V:Scored<K>> ScoredCircularBuffer<K,V> {
 	pub fn push_scored( &mut self, item: V ) {
 		let score = item.score();
 		self.push( item, score );
+	}
+}
+
+impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {	
+	pub fn push_bucket<F, B:PartialEq<B>>( &mut self, value: V, score: K, bucket_fn: F ) 
+		where F: Fn(&V) -> B {
+		let len = self.deque.len();
+		let new = ScoredItem { score: score, value: value };
+		
+		for _ in 0..len {
+			let compare = self.deque.pop_back().unwrap();
+			
+			if bucket_fn( &compare.value ) == bucket_fn( &new.value ) {
+				let keep = match self.sort {
+					Sort::Descending => new.score < compare.score,
+					Sort::Ascending => new.score > compare.score
+				};
+				
+				if keep {
+//					println!("Compared {:?} to {:?}, keeping #1", compare.score, new.score );
+					self.deque.push_front( compare );
+				} else {
+//					println!("Compared {:?} to {:?}, keeping #2", compare.score, new.score );
+					self.deque.push_front( new );
+				}
+				
+				return;
+			} else {
+				self.deque.push_front(compare);
+			}
+		}
+		
+		self.push_scored_item(new);
 	}
 }
 
@@ -60,7 +94,7 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 	}
 	
 	pub fn drain( &mut self ) -> Drain<ScoredItem<K,V>> {
-		self.deque.drain()
+		self.deque.drain(..)
 	}
 	
 	pub fn clear( &mut self ) {
@@ -68,9 +102,12 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 	}
 	
 	pub fn push( &mut self, value: V, score: K ) {
+		self.push_scored_item( ScoredItem { score: score, value: value } );
+	}
+	
+	fn push_scored_item( &mut self, new: ScoredItem<K,V> ) {
+		let mut remove = new;
 		let len = self.deque.len();
-		let mut remove = ScoredItem { score: score, value: value };
-		
 		if len < self.size || len == 0 {
 			self.deque.push_front( remove );
 			return;
@@ -107,22 +144,22 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 	
 //	pub fn first(&self) -> Option<&V> {
 //		let vals = self.sort();
-//		vals.drain().next()
+//		vals.drain(..).next()
 //	}
 //	
 //	pub fn first_mut(&mut self) -> Option<V> {
 //		let vals = self.sort_mut();
-//		vals.drain().next()
+//		vals.drain(..).next()
 //	}
 //		
 //	pub fn last(&self) -> Option<&V> {
 //		let vals = self.sort();
-//		vals.drain().last()
+//		vals.drain(..).last()
 //	}
 //	
 //	pub fn last_mut(&mut self) -> Option<V> {
 //		let vals = self.sort_mut();
-//		vals.drain().last()
+//		vals.drain(..).last()
 //	}
 	
 	pub fn iter(&self) -> Iter<ScoredItem<K,V>> {
@@ -141,7 +178,7 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 			Sort::Descending => sorted.sort_by(|ref a, ref b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
 		}
 		
-		let result : Vec<&V> = sorted.drain().map(|e| &e.value ).collect();
+		let result : Vec<&V> = sorted.drain(..).map(|e| &e.value ).collect();
 		result
 	}
 
@@ -153,7 +190,116 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 			Sort::Descending => sorted.sort_by(|ref a, ref b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
 		}
 		
-		let result : Vec<V> = sorted.drain().map(|e| e.value ).collect();
+		let result : Vec<V> = sorted.drain(..).map(|e| e.value ).collect();
 		result
 	}
+}
+
+mod tests {
+	use super::*;
+	
+	fn new_buffer_desc() -> ScoredCircularBuffer<usize, usize> {
+		let mut buffer = ScoredCircularBuffer::new(2, Sort::Descending);
+		buffer.push( 1, 1 );
+		buffer.push( 3, 3 );
+		buffer.push( 5, 5 );
+		
+		buffer.push( 2, 2 );
+		buffer.push( 4, 4 );
+		buffer.push( 6, 6 );
+		
+		buffer
+	}
+	
+	fn new_buffer_asc() -> ScoredCircularBuffer<usize, usize> {
+		let mut buffer = ScoredCircularBuffer::new(2, Sort::Ascending);
+		buffer.push( 6, 6 );
+		buffer.push( 4, 4 );
+		buffer.push( 2, 2 );
+		
+		buffer.push( 5, 5 );
+		buffer.push( 3, 3 );
+		buffer.push( 1, 1 );
+		
+		buffer
+	}
+	
+	#[derive(PartialEq, Debug, Clone)]
+	struct BucketTest {
+		val: usize,
+		bkt: usize
+	}
+	
+	fn new_buffer_bucketed( sort: Sort ) -> ScoredCircularBuffer<usize, BucketTest> {
+		let mut buffer = ScoredCircularBuffer::new(2, sort);
+		
+		buffer.push_bucket( BucketTest{val: 4, bkt: 1}, 4, |e| e.bkt );
+		buffer.push_bucket( BucketTest{val: 2, bkt: 1}, 2, |e| e.bkt );
+		buffer.push_bucket( BucketTest{val: 1, bkt: 1}, 1, |e| e.bkt );
+		
+		buffer.push_bucket( BucketTest{val: 5, bkt: 2}, 5, |e| e.bkt );
+		buffer.push_bucket( BucketTest{val: 3, bkt: 2}, 3, |e| e.bkt );
+		
+		buffer
+	}
+	
+	#[test]
+	fn test_sort_desc() {
+		let buffer_desc = new_buffer_desc();
+		let mut desc_sort = buffer_desc.sort();
+		let mut desc_sort_iter = desc_sort.drain(..);
+		assert_eq!( desc_sort_iter.next(), Some(&6) );
+		assert_eq!( desc_sort_iter.next(), Some(&5) );
+		assert_eq!( desc_sort_iter.next(), None );
+    }
+	
+	#[test]
+	fn test_sort_mut_desc() {
+		let mut buffer_desc = new_buffer_desc();
+		let mut desc_sort = buffer_desc.sort_mut();
+		let mut desc_sort_iter = desc_sort.drain(..);
+		assert_eq!( desc_sort_iter.next(), Some(6) );
+		assert_eq!( desc_sort_iter.next(), Some(5) );
+		assert_eq!( desc_sort_iter.next(), None );
+    }
+	
+	#[test]
+	fn test_sort_asc() {
+		let buffer_desc = new_buffer_asc();
+		let mut desc_sort = buffer_desc.sort();
+		let mut desc_sort_iter = desc_sort.drain(..);
+		assert_eq!( desc_sort_iter.next(), Some(&1) );
+		assert_eq!( desc_sort_iter.next(), Some(&2) );
+		assert_eq!( desc_sort_iter.next(), None );
+    }
+	
+	#[test]
+	fn test_sort_mut_asc() {
+		let mut buffer_desc = new_buffer_asc();
+		let mut desc_sort = buffer_desc.sort_mut();
+		let mut desc_sort_iter = desc_sort.drain(..);
+		assert_eq!( desc_sort_iter.next(), Some(1) );
+		assert_eq!( desc_sort_iter.next(), Some(2) );
+		assert_eq!( desc_sort_iter.next(), None );
+    }
+	
+	#[test]
+	fn test_sort_bucket_asc() {
+		let buffer_desc = new_buffer_bucketed( Sort::Ascending );
+		let mut desc_sort = buffer_desc.sort();
+		let mut desc_sort_iter = desc_sort.drain(..);
+		assert_eq!( desc_sort_iter.next(), Some(&BucketTest{ val: 1, bkt: 1}) );
+		assert_eq!( desc_sort_iter.next(), Some(&BucketTest{ val: 3, bkt: 2}) );
+		assert_eq!( desc_sort_iter.next(), None );
+    }
+	
+	#[test]
+	fn test_sort_bucket_desc() {
+		let buffer_desc = new_buffer_bucketed( Sort::Descending );
+		let mut desc_sort = buffer_desc.sort();
+		let mut desc_sort_iter = desc_sort.drain(..);
+		assert_eq!( desc_sort_iter.next(), Some(&BucketTest{ val: 5, bkt: 2}) );
+		assert_eq!( desc_sort_iter.next(), Some(&BucketTest{ val: 4, bkt: 1}) );
+		assert_eq!( desc_sort_iter.next(), None );
+    }
 }

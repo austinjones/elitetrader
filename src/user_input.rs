@@ -8,7 +8,7 @@ pub fn prompt_confirm( message: &str ) -> bool {
 	
 	println!("");
 	
-	match val.to_lowercase().as_str() {
+	match &val.to_lowercase()[..] {
 		"y" | "yes" => true,
 		"n" | "no" => false,
 		_ => prompt_confirm( message )
@@ -38,7 +38,7 @@ pub fn read_price_update<T: FromStr>( description: &str ) -> T {
 	println!("Enter the updated {}:", description );
 	
 	let line = read_line();
-	let val = match T::from_str( line.as_str() ) {
+	let val = match T::from_str( &line[..] ) {
 		Ok(price) => price,
 		Err(_) => {
 			println!("Failed to parse answer '{}'.  Please try again.", line);
