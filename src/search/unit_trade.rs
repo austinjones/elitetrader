@@ -3,7 +3,7 @@ use std::fmt::Formatter;
 use std::fmt::Error;
 
 use data::trader::*;
-use data::IndexedUniverse;
+use data::Universe;
 use search::player_state::PlayerState;
 use search::time_estimate::TimeEstimate;
 
@@ -11,6 +11,7 @@ use util::scored_buf::Scored;
 
 #[derive(Clone)]
 pub struct UnitTrade<'a> {
+	pub commodity_id: u16,
 	pub commodity_name: String,
 	
 	pub buy: &'a Listing,
@@ -21,8 +22,8 @@ pub struct UnitTrade<'a> {
 	pub sell_station: &'a Station,
 	pub sell_system: &'a System,
 	
-	pub buy_price: u16,
-	pub sell_price: u16,
+	pub buy_price: u32,
+	pub sell_price: u32,
 	
 	pub is_valid: bool,
 	pub is_prohibited: bool,
@@ -37,18 +38,31 @@ pub struct UnitTrade<'a> {
 // actual trait impl
 #[allow(dead_code)]
 impl<'b> UnitTrade<'b> {
-	pub fn new( iuniverse: &'b IndexedUniverse, state: &PlayerState, buy: &'b Listing, sell: &'b Listing ) -> UnitTrade<'b> {
-		let buy_station = iuniverse.get_station( &buy.station_id )
-			.expect( format!("Unknown station id {}", buy.station_id ).as_str() );
+	pub fn new( universe: &'b Universe, state: &PlayerState, buy: &'b Listing, sell: &'b Listing ) -> UnitTrade<'b> {
+		let buy_station = universe.get_station( buy.station_id )
+			.expect( &format!("Unknown station id {}", buy.station_id )[..] );
 		
-		let buy_system = iuniverse.get_system( &buy.system_id )
-			.expect( format!("Unknown system id {}", buy.system_id ).as_str() );
+		let buy_system = universe.get_system( buy.system_id )
+			.expect( &format!("Unknown system id {}", buy.system_id )[..] );
 		
-		let sell_station = iuniverse.get_station( &sell.station_id )
-			.expect( format!("Unknown station id {}", sell.station_id ).as_str() );
+		let sell_station = universe.get_station( sell.station_id )
+			.expect( &format!("Unknown station id {}", sell.station_id )[..] );
 		
-		let sell_system = iuniverse.get_system( &sell.system_id )
-			.expect( format!("Unknown system id {}", sell.system_id ).as_str() );
+		let sell_system = universe.get_system( sell.system_id )
+			.expect( &format!("Unknown system id {}", sell.system_id )[..] );
+			
+		UnitTrade::new_unpacked( state, 
+			buy_system, buy_station, buy,
+			sell_system, sell_station, sell)
+	}	
+	
+	pub fn new_unpacked( state: &PlayerState, 
+		buy_system: &'b System,
+		buy_station: &'b Station,
+		buy: &'b Listing, 
+		sell_system: &'b System,
+		sell_station: &'b Station,
+		sell: &'b Listing ) -> UnitTrade<'b> {
 		
 		let normalized_time = TimeEstimate::new_normalized_estimate( state, buy_system, sell_system, sell_station );
 		let adjusted_time = TimeEstimate::new_adjusted_estimate( state, buy_system, sell_system, sell_station );
@@ -61,6 +75,7 @@ impl<'b> UnitTrade<'b> {
 //			profit_per_ton, profit_total, profit_per_min.unwrap_or(0f64), cost_in_seconds );
 		
 		UnitTrade {
+			commodity_id: buy.commodity.commodity_id.clone(),
 			commodity_name: buy.commodity.commodity_name.clone(),
 			
 			buy: buy,
@@ -85,7 +100,7 @@ impl<'b> UnitTrade<'b> {
 		}
 	}
 	
-	pub fn with_sell_price( &self, sell_price: u16 ) -> UnitTrade<'b> {
+	pub fn with_sell_price( &self, sell_price: u32 ) -> UnitTrade<'b> {
 		let mut new = self.clone();
 		let mut sell = self.sell.clone();
 		sell.sell_price = sell_price;
@@ -98,6 +113,10 @@ impl<'b> UnitTrade<'b> {
 		new.profit_per_ton_per_min = profit_per_ton_per_min;
 		
 		new
+	}
+	
+	pub fn credit_potential( &self ) -> u64 {
+		self.profit_per_ton as u64 * self.buy.supply as u64
 	}
 }
 
@@ -145,14 +164,14 @@ impl<'a> Scored<f64> for UnitTrade<'a> {
 
 impl<'b> Debug for UnitTrade<'b> {
 	fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
-		let str = format!( "{}cr profit/ton in {}sec - buy {} for {} at {}.{}, sell for {} at {}.{}",
+		let str = format!( "{}cr pft/ton in {:.0}sec - {} ({}cr -> {}cr) from {}.{} to {}.{}",
 			self.profit_per_ton,
 			self.normalized_time.time_total,
 			self.buy.commodity.commodity_name,
 			self.buy.buy_price,
+			self.sell.sell_price,
 			self.buy_system.system_name,
 			self.buy_station.station_name,
-			self.sell.sell_price,
 			self.sell_system.system_name,
 			self.sell_station.station_name
 		);
