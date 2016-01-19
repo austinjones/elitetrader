@@ -4,25 +4,28 @@ use std::collections::HashMap;
 
 use std::path::Path;
 use std::path::PathBuf;
-use std::fs::PathExt;
 use std::fs::File;
 
 use time::now;
 use time::Duration;
 
 use persist::*;
+use data::edce::EdceData;
 use data::price_adjustment::PriceAdjustment;
 use data::time_adjustment::TimeAdjustment;
+use data::universe_index::UniverseIndex;
 use data::trader::*;
 use data::eddb::*;
-use search::time_estimate::TimeEstimate;
+
+use search::FullTrade;
 
 use util::scored_buf::ScoredCircularBuffer;
 use util::scored_buf::Sort;
+use search::SearchCache;
+
 use std::str::FromStr;
-
-
-
+use statistical;
+use filetime::FileTime;
 use CACHE_FILENAME;
 
 fn get_cachefile_loc() -> PathBuf {
@@ -32,11 +35,13 @@ fn get_cachefile_loc() -> PathBuf {
 pub struct Universe {
 	pub systems: Vec<System>,
 //	pub time_adjustments: HashMap<u32, ScoredCircularBuffer<u64, TimeAdjustment>>
-	pub time_adjustments: ScoredCircularBuffer<u64, TimeAdjustment>
+	pub time_adjustments: ScoredCircularBuffer<u64, TimeAdjustment>,
+	
+	pub index: UniverseIndex
 }
 
 impl Universe {
-	pub fn load(ship_size: &ShipSize) -> Universe {
+	pub fn load(ship_size: &ShipSize ) -> Universe {
 		let cachefile_path = get_cachefile_loc();
 		let cachefile_str = cachefile_path.to_str().unwrap_or("<unknown>");
 		
@@ -49,21 +54,23 @@ impl Universe {
 				};
 				
 				let modtime = match file.metadata() {
-					Ok(meta) => meta.modified() / 1000,
+					Ok(meta) => FileTime::from_last_modification_time(&meta),
 					Err(reason) => panic!("Failed to load file metadata ({}) for path: {}", 
 						reason, cachefile_str)
 				};
 				
 				let now = time::now().to_timespec().sec;
 				
-				let age = Duration::milliseconds( now as i64 - modtime as i64 );
+				let age = Duration::seconds( now as i64 - modtime.seconds_relative_to_1970() as i64 );
+				let num_hours = age.num_seconds() as f64 / 3600f64;
 				let threshold = Duration::days(1);
 				
 				if age < threshold {
-					println!("Loading cached file from {} ...", cachefile_str );
+					println!("Loading cached file from {} ... file cached {:.1} hours ago", 
+						cachefile_str, num_hours );
 					read_json( &cachefile_path.as_path() )
 				} else {
-					println!("File was modified {} hours ago - refreshing", age.num_hours() );
+					println!("File was modified {} hours ago - refreshing", num_hours );
 					Universe::recalculate_systems( &cachefile_path.as_path() )
 				}
 			},
@@ -73,10 +80,12 @@ impl Universe {
 		};
 		
 		let systems = Universe::filter_systems( systems, ship_size );
+		let index = UniverseIndex::calculate(&systems);
 		
 		let mut universe = Universe {
 			systems: systems,
-			time_adjustments: ScoredCircularBuffer::new(20, Sort::Descending)
+			time_adjustments: ScoredCircularBuffer::new(20, Sort::Descending),
+			index: index
 		};
 		
 		universe.apply_price_adjustments( PriceAdjustment::load_all() );
@@ -84,23 +93,51 @@ impl Universe {
 		
 		universe
 	}
+	
+	pub fn snapshot( &self ) -> Universe {
+		let systems_new = self.systems.clone();
+		let index = UniverseIndex::calculate(&systems_new);
+		
+		Universe {
+			systems: systems_new,
+			time_adjustments: ScoredCircularBuffer::new(20, Sort::Descending),
+			index: index
+		}
+	}
+	
+	pub fn apply_trade(&mut self, trade: &FullTrade, cache: &SearchCache ) {
+		if let Some(mut station) = self.get_station_mut(trade.unit.buy.station_id) {
+			for listing in station.listings.iter_mut() {
+				if listing.commodity.commodity_id == trade.unit.commodity_id {
+					listing.supply = listing.supply - trade.used_cargo;
+					break;
+				}
+			}
+		}
+		
+		cache.invalidate_station( trade.unit.buy_station.station_id );
+	}
 
 	fn recalculate_systems( path: &Path ) -> Vec<System> {
 		println!("The cached data file is stale, or did not exist.  Reloading data from eddb.io ...");
 		
 		println!("Loading commodities.json...");
-		let commodities_json : Vec<CommodityJson> = http_read_json(&"http://eddb.io/archive/v3/commodities.json".to_string());
+		let commodities_json : Vec<CommodityJson> = http_read_json(&"https://eddb.io/archive/v4/commodities.json".to_string());
 		
 		println!("Loading system.json...");
-		let systems_json : Vec<SystemJson> = http_read_json(&"http://eddb.io/archive/v3/systems.json".to_string());
+		let systems_json : Vec<SystemJson> = http_read_json(&"https://eddb.io/archive/v4/systems.json".to_string());
 		
 		println!("Loading stations.json...");
-		let stations_json : Vec<StationJson> = http_read_json(&"http://eddb.io/archive/v3/stations.json".to_string());
+		let stations_json : Vec<StationJson> = http_read_json(&"https://eddb.io/archive/v4/stations.json".to_string());
+		
+		println!("Loading listings.csv...");
+		let listings_csv : Vec<StationCommodityListingJson> = http_read_csv(&"https://eddb.io/archive/v4/listings.csv".to_string(), true);
 		
 		println!("Loads complete.  Converting to internal format...");
 		
 	//	println!("Grouping stations by system");
-		let stations_by_system : HashMap<u16, Vec<&StationJson>> = get_stations_by_system( &stations_json );
+		let stations_by_system = get_stations_by_system( &stations_json );
+		let listings_by_station = get_listings_by_station( &listings_csv );
 		
 		let mut commodities_by_id = HashMap::new();
 		let mut commodities_by_name = HashMap::new();
@@ -123,6 +160,8 @@ impl Universe {
 		
 		//let mut stations_map = HashMap::new();
 		
+		let now = time::now().to_timespec().sec;
+		
 		for system_json in systems_json {
 			let system_id = system_json.id;
 			let mut system = Box::new(System {
@@ -140,6 +179,34 @@ impl Universe {
 				Some( stations_jsons ) => {
 					for station_json in stations_jsons {
 						let station_id = station_json.id;
+
+						// todo: exclude stations in a way that allows players to start trading from excluded stations
+
+						if station_json.is_planetary.unwrap_or(0u8) == 1 {
+							// todo: allow configuration of planetary stations
+							continue;
+						}
+						
+						if let Some(market_updated_at) = station_json.market_updated_at {
+							// based on lots of work in Mathematica, station sell prices significantly change,
+							//   about 22 days after they collected
+							
+							// let's filter out any stations that haven't been updated in this time
+							// this should prevent the player from being sent to stations for a loss
+							
+							// this technically should be recalculated on every run, 
+							//  but we recalculate the cachefile every day or two anyway 
+							
+							//todo: dynamically scale buy/sell prices based on confidence during trade calculations
+				
+							let age = Duration::seconds( now as i64 - market_updated_at as i64 );
+							let threshold = Duration::days(22);
+							
+							if age > threshold {
+								//println!("Rejecting {} as it was updated {} hours ago", station_json.name, age.num_hours());
+								continue;
+							}
+						}
 						
 						let mut prohibited_commodities = Vec::new();
 						for commodity_name in &station_json.prohibited_commodities {
@@ -153,7 +220,7 @@ impl Universe {
 						}
 						
 						let ship_size_in = station_json.max_landing_pad_size.clone().unwrap_or("S".to_string());
-						let ship_size = match ShipSize::from_str(ship_size_in.as_str()) {
+						let ship_size = match ShipSize::from_str(&ship_size_in[..]) {
 							Ok(v) => v,
 							Err(reason) => panic!("Unknown ship size '{}' for station '{}': {}", 
 								ship_size_in, station_json.name, reason )
@@ -168,10 +235,12 @@ impl Universe {
 //							time_to_station: 0f64,
 							updated_at: station_json.updated_at,
 							listings: Vec::new(),
-							prohibited_commodities: prohibited_commodities
+							prohibited_commodities: prohibited_commodities,
+							market_updated_at: station_json.market_updated_at,
+							is_planetary: station_json.is_planetary.map(|e| e == 1).unwrap_or(false)
 						});
 						
-						for listing_json in &station_json.listings {
+						for listing_json in listings_by_station.get(&station_id).unwrap_or(&Vec::new()) {
 							let commodity = commodities_by_id.get( &listing_json.commodity_id ).unwrap().clone();
 							
 							let listing = Listing {
@@ -183,10 +252,10 @@ impl Universe {
 											{ true => listing_json.supply as u32, _ => 0 },
 											
 								buy_price: match listing_json.buy_price > 0 
-											{ true => listing_json.buy_price as u16 , _ => 0 },
+											{ true => listing_json.buy_price as u32 , _ => 0 },
 											
 								sell_price:  match listing_json.sell_price > 0 
-											{ true => listing_json.sell_price as u16 , _ => 0 }
+											{ true => listing_json.sell_price as u32 , _ => 0 }
 							};
 							
 							station.listings.push( listing );
@@ -210,24 +279,24 @@ impl Universe {
 	
 	fn filter_systems( mut systems: Vec<System>, ship_size: &ShipSize ) -> Vec<System> {
 		let illegal_categories = ["drugs", "weapons", "slavery"];
-		let mut systems : Vec<System> = systems.drain()
+		let mut systems : Vec<System> = systems.drain(..)
 			.filter(|e| !e.needs_permit)
 			.collect();
 		
 		for mut system in &mut systems {
-			let mut new_stations : Vec<Station> = system.stations.drain()
+			let mut new_stations : Vec<Station> = system.stations.drain(..)
 				.filter(|e| e.max_landing_pad_size >= *ship_size )
 				.collect();
 
 			for mut station in new_stations.iter_mut() {
 				if station.prohibited_commodities.len() == 0 {
-					let new_listings : Vec<Listing> = station.listings.drain()
-						.filter(|e| !illegal_categories.contains( &e.commodity.category.to_lowercase().as_str() ) )
+					let new_listings : Vec<Listing> = station.listings.drain(..)
+//						.filter(|e| !illegal_categories.contains( &&e.commodity.category.to_lowercase()[..] ) )
 						.collect();
 					station.listings = new_listings;
 				} else {
 					let prohibited_commodities = &station.prohibited_commodities;
-					let new_listings : Vec<Listing> = station.listings.drain()
+					let new_listings : Vec<Listing> = station.listings.drain(..)
 						.filter(|e| !prohibited_commodities.contains( &e.commodity.commodity_id ) )
 						.collect();
 					station.listings = new_listings;
@@ -263,40 +332,32 @@ impl Universe {
 	}
 	
 	pub fn apply_price_adjustment( &mut self, price: &PriceAdjustment ) {
-		for system in self.systems.iter_mut() {
-			if price.system_id != system.system_id {
-				continue;
-			}
-			
-			for station in system.stations.iter_mut() {
-				if price.station_id != station.station_id {
+		if let Some(mut station) = self.get_station_mut(price.station_id) {
+			for listing in station.listings.iter_mut() {
+				if price.commodity_id != listing.commodity.commodity_id {
 					continue;
 				}
 				
-				for listing in station.listings.iter_mut() {
-					if price.commodity_id != listing.commodity.commodity_id {
-						continue;
-					}
+				// only overwrite if the timestamp of the adjustment is newer than the date from eddb
+				// this prevents old user-entered values from becoming stale.
+				// the adjustment has to be 10 minutes before the EDDB entry,
+				// in case we created the update using EDCE
+				
+				if listing.collected_at < price.timestamp - 600  {
+					match price.buy_price {
+						Some(v) => {listing.buy_price = v},
+						None => {}
+					};
 					
-					// only overwrite if the timestamp of the adjustment is newer than the date from eddb
-					// this prevents old user-entered values from becoming stale.
+					match price.supply {
+						Some(v) => {listing.supply = v},
+						None => {}
+					};
 					
-					if listing.collected_at < price.timestamp  {
-						match price.buy_price {
-							Some(v) => {listing.buy_price = v},
-							None => {}
-						};
-						
-						match price.supply {
-							Some(v) => {listing.supply = v},
-							None => {}
-						};
-						
-						match price.sell_price {
-							Some(v) => {listing.sell_price = v},
-							None => {}
-						};
-					}
+					match price.sell_price {
+						Some(v) => {listing.sell_price = v},
+						None => {}
+					};
 				}
 			}
 		}
@@ -379,25 +440,124 @@ impl Universe {
 //	}
 	
 	pub fn get_raw_adjustment_factor( &self ) -> f64 {
-		let mut n = self.time_adjustments.len();
-		let mut ratios : f64 = self.time_adjustments.iter().map( |e| e.value.actual_time.time_to_station / e.value.raw_estimate.time_to_station ).sum();
-		
-		// make sure the adjustment factor moves slowly so we don't get scared away from trades with long station distances
-		while n < 10 {
-			n += 1;
-			ratios += 1f64;
-		}
-			
-//		for scored_buf in self.time_adjustments.values() {
-//			let actual : f64 = scored_buf.iter().map( |e| e.value.actual_time.time_to_station ).sum();
-//			let normalized : f64 = scored_buf.iter().map( |e| e.value.raw_estimate.time_to_station ).sum();
-//			sum_actual += actual;
-//			sum_normalized += normalized;
+		let time_adjustments = self.time_adjustments.sort();
+				
+//		for (i,time) in time_adjustments.iter().enumerate() {
+//			println!("Time Adjustment {} => {:.1} / {:.1} = {:.2}, {:.1} / {:.1} = {:.2}", i,
+//				 time.actual_time.time_to_station, 
+//				 time.raw_estimate.time_to_station,
+//				 time.actual_time.time_to_station / time.raw_estimate.time_to_station,
+//				 time.actual_time.time_to_station, 
+//				 time.adjusted_estimate.time_to_station,
+//				 time.actual_time.time_to_station / time.adjusted_estimate.time_to_station );
 //		}
 		
-		let factor = ratios / n as f64;
+		let mut vals: Vec<f64> = time_adjustments.iter()
+			.map(|e| e.actual_time.time_to_station / e.raw_estimate.time_to_station )
+			.collect();
+			
+		// make sure the adjustment factor moves slowly so we don't get scared away from trades with long station distances
+		// if the players first few trades are slow
+		while vals.len() < 10 {
+			vals.push(1f64);
+		}
+
+		let factor = statistical::median( &vals[..] );
 		
-//		println!("Got adjustment factor {:.2}", factor);
+//		println!("Summary adjustment factor {:.2}", factor);
 		factor
+	}
+	
+	pub fn get_index( &self ) -> &UniverseIndex {
+		&self.index
+	}
+	
+	pub fn get_system_by_index<'a>( &'a self, index: Option<usize> ) -> Option<&'a System> {
+		index.map(|i| &self.systems[i] )
+	}
+	
+	pub fn get_system_by_index_mut<'a>( &'a mut self, index: Option<usize> ) -> Option<&'a mut System> {
+		index.map(move |i| &mut self.systems[i] )
+	}
+	
+	pub fn get_systems_by_index<'a>( &'a self, indeces: Vec<usize> ) -> Vec<&'a System> {
+		indeces.iter().map(|&index| &self.systems[index] ).collect()
+	}
+		
+	pub fn get_station_by_index<'a>( &'a self, index: Option<(usize, usize)> ) -> Option<&'a Station> {
+		index.map(|(sys, stat)| &self.systems[sys].stations[stat] )
+	}
+		
+	pub fn get_station_by_index_mut<'a>( &'a mut self, index: Option<(usize, usize)> ) -> Option<&'a mut Station> {
+		index.map(move |(sys, stat)| &mut self.systems[sys].stations[stat] )
+	}
+	
+	pub fn get_stations_by_index<'a>( &'a self, indeces: Vec<(usize, usize)> ) -> Vec<&'a Station> {
+		indeces.iter().map(|&(sys, stat)| &self.systems[sys].stations[stat] ).collect()
+	}
+		
+	pub fn get_listing_by_index<'a>( &'a self, index: Option<(usize, usize, usize)> ) -> Option<&'a Listing> {
+		index.map(move |(sys, stat, list)| &self.systems[sys].stations[stat].listings[list] )
+	}
+		
+	pub fn get_listing_by_index_mut<'a>( &'a mut self, index: Option<(usize, usize, usize)> ) -> Option<&'a mut Listing> {
+		index.map(move |(sys, stat, list)| &mut self.systems[sys].stations[stat].listings[list] )
+	}
+		
+	pub fn get_system( &self, id: u32 ) -> Option<&System> {
+		self.get_system_by_index( self.index.get_index_system(id) )
+	}
+	
+	fn get_system_mut( &mut self, id: u32 ) -> Option<&mut System> {
+		let index = self.index.get_index_system(id);
+		self.get_system_by_index_mut( index )
+	}
+	
+	pub fn get_system_by_name( &self, system_name: &String ) -> Option<&System> {
+		self.get_system_by_index( self.index.get_index_system_by_name(system_name) )
+	}
+	
+	pub fn get_station( &self, id: u32 ) -> Option<&Station> {
+		self.get_station_by_index( self.index.get_index_station(id) )
+	}
+	
+	fn get_station_mut( &mut self, id: u32 ) -> Option<&mut Station> {
+		let index = self.index.get_index_station(id);
+		self.get_station_by_index_mut( index )
+	}
+	
+	pub fn get_station_by_name( &self, system_name: &String, station_name: &String ) -> Option<&Station> {
+		match self.get_system_by_index( self.index.get_index_system_by_name(system_name) ) {
+			Some( system ) => system.stations.iter()
+					.filter( |e| &e.station_name == station_name )
+					.next(),
+			_ => None
+		}
+	}
+	
+	pub fn get_station_by_name_mut( &mut self, system_name: &String, station_name: &String ) -> Option<&mut Station> {
+		let index = self.index.get_index_system_by_name(system_name);
+		match self.get_system_by_index_mut( index ) {
+			Some( mut system ) => system.stations.iter_mut()
+					.filter( |e| &e.station_name == station_name )
+					.next(),
+			_ => None
+		}
+	}
+	
+	pub fn get_stations_by_name( &self, station_name: &String ) -> Vec<&Station> {
+		self.get_stations_by_index( self.index.get_index_station_by_name(station_name) )
+	}
+	
+//	pub fn get_listings_in_system( &self, id: &u16 ) -> Option<&Vec<Listing>> {
+//		self.listings_by_system.get( &id )
+//	}
+//	
+//	pub fn get_listings_in_station( &self, id: &u32 ) -> Option<&Vec<Listing>> {
+//		self.listings_by_station.get( &id )
+//	}
+	
+	pub fn get_systems_in_range( &self, system: &System, range: f64 ) -> Vec<&System> {
+		self.get_systems_by_index( self.index.get_index_systems_in_range( system, range ) )
 	}
 }
