@@ -1,13 +1,15 @@
 mod adjustments;
+mod universe_index;
 
 pub mod eddb;
 pub mod trader;
 
+mod edce;
+pub use self::edce::EdceData;
+
 mod universe;
 pub use self::universe::Universe;
 
-mod indexed_universe;
-pub use self::indexed_universe::IndexedUniverse;
 
 mod price_adjustment;
 pub use self::price_adjustment::PriceAdjustment;
