@@ -4,137 +4,28 @@ use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::fmt::Error;
 
+use crossbeam;
+use num_cpus;
+
+use std::collections::HashSet;
 use rand::{thread_rng, Rng};
-use std::collections::HashMap;
 
 use data::trader::*;
-use data::IndexedUniverse;
+use data::Universe;
 
+use search::search_cycle::{SearchCycleTracker, SearchCycle};
 use search::full_trade::FullTrade;
 use search::unit_trade::UnitTrade;
 use search::search_quality::SearchQuality;
 use search::player_state::PlayerState;
+use search::search_cache::SearchCache;
 
 use util::num_unit::NumericUnit;
 use util::scored_buf::*;
 
-pub struct SearchCache<'a> {
-	pub trade_cache: HashMap<u32, Vec<UnitTrade<'a>>>,
-//	convergence_filter: VecMap<HashMap<usize, f64>>
-}
+use std::cmp::*;
 
-impl<'a> SearchCache<'a> {
-	pub fn new() -> SearchCache<'a> {
-		SearchCache {
-			trade_cache: HashMap::new(),
-//			convergence_filter: VecMap::with_capacity(MAX_DEPTH)
-		}
-	}
-	
-//	pub fn convergence_check( &mut self, result: &SearchResult<'a>, depth: usize ) -> bool {
-//		match self.convergence_filter.get( &depth ) {
-//			None => {
-//				let map = HashMap::new();
-//				self.convergence_filter.insert(depth, map);
-//			}
-//			_ => {}
-//		};
-//		
-//		let depthmap = match self.convergence_filter.get_mut( &depth ) {
-//			Some(m) => m,
-//			None => panic!("Should have created a depth map in convergence_filter")
-//		};
-//		
-//		let sell_station_id = result.trade.unit.sell_station.station_id as usize;
-//		let score = result.profit_total as f64 / result.distance_in_seconds;
-//		
-//		let is_better = match depthmap.get( &sell_station_id ) {
-//			Some(best) => *best < score,
-//			None => true
-//		};
-//		
-//		if is_better {
-//			depthmap.insert( sell_station_id, score );
-//		}
-//		
-//		is_better
-//	}
-	
-	fn get_1hop_trades( &mut self, iuniverse: &'a IndexedUniverse, 
-			station: &SearchStation ) -> Vec<UnitTrade<'a>> {
-		let station_id = station.state.station_id;
-		
-		let insert = self.trade_cache.get(&station_id).is_none();
-		if insert {
-			let trades = SearchCache::best_1hop_trades( iuniverse, &station.state, station.search_quality );
-			self.trade_cache.insert( station_id, trades.clone() );
-			
-			trades
-		} else {
-			let trades = self.trade_cache.get(&station_id).unwrap();
-			
-			trades.clone()
-		}
-	}
-			
-	fn best_1hop_trades( iuniverse : &'a IndexedUniverse, state: &PlayerState, search_quality: SearchQuality ) -> Vec<UnitTrade<'a>> {
-		let hop_width = search_quality.get_hop_width();
-		let trade_range = search_quality.get_trade_range();
-		
-		let mut trade_buffer = ScoredCircularBuffer::new( hop_width, Sort::Descending );
-//		let mut trade_buffer = ScoredCircularBuffer::new( hop_width, Sort::Descending );
-		
-		let station = match iuniverse.get_station( &state.station_id ) {
-			Some(v) => v,
-			None => panic!("Unknown station id {}", &state.station_id)
-		};
-		
-//		println!("best_trades_in_range - Getting systems in range");
-		let system = match iuniverse.get_system( &state.system_id ) {
-			Some(system) => system,
-			None => panic!( "Unknown system id {}", &state.system_id )
-		};
-		
-		let systems = iuniverse.get_systems_in_range( &system, trade_range );
-		
-//		println!("best_trades_in_range - Getting sells from systems");
-		let sells = iuniverse.sells_from_systems( systems );
-		
-//		println!("best_trades_in_range - Grouping by commodity");
-		let sells_by_commodity = sells.by_commodity();
-		
-//		println!("best_trades_in_range - Iterating combinations");
-		for buy in iuniverse.buys_from_station(station).nodes {
-			let id = buy.commodity.to_id();
-			let trades = match sells_by_commodity.get( &id ) {
-				Some(t) => t,
-				None => { continue; }
-			};
-			
-			for sell in trades {
-				if !UnitTrade::is_valid(&buy, sell) {
-					continue;
-				}
-				
-				let sell_station = match iuniverse.get_station( &sell.station_id ) {
-					Some(station) => station,
-					None => { continue; }
-				};
-				
-				if UnitTrade::is_prohibited( &buy.commodity, &sell_station ) {
-					continue;
-				}
-				
-				let trade = UnitTrade::new( &iuniverse, &state, &buy, *sell);
-				trade_buffer.push_scored( trade );
-			}
-		}
-		
-//		println!("best_trades_in_range - Got result combinations");
-		trade_buffer.sort_mut()
-	}
-}
-
+#[derive(Clone)]
 pub struct SearchResult<'a> {
 	pub trade: FullTrade<'a>,
 	pub profit_total: u32,
@@ -159,6 +50,17 @@ impl<'a> SearchResult<'a> {
 		
 		SearchResult {
 			trade: trade.clone(),
+			profit_total: profit_total,
+			time_total: distance_in_seconds
+		}
+	}
+	
+	pub fn with_cycle( &self, cycle: &SearchCycle ) -> SearchResult<'a> {
+		let profit_total = self.profit_total + cycle.profit_total;
+		let distance_in_seconds = self.time_total + cycle.time_total;
+		
+		SearchResult {
+			trade: self.trade.clone(),
 			profit_total: profit_total,
 			time_total: distance_in_seconds
 		}
@@ -198,10 +100,10 @@ impl<'a> Scored<f64> for SearchResult<'a> {
 
 impl<'a> Debug for SearchResult<'a> {
 	fn fmt(&self, formatter: &mut Formatter) -> Result<(), Error> {
-		let str = format!( "{} profit in {:.2} minutes, {} profit/min -- {:?}",
+		let str = format!( "{} profit in {:.0} minutes, {} profit/min -- {:?}",
 			NumericUnit::new_string( self.profit_total, &"cr".to_string() ),
 			self.time_total / 60f64,
-			NumericUnit::new_string( 60f64 * self.profit_total as f64 / self.time_total, &"cr".to_string() ),
+			NumericUnit::new_string( self.profit_per_min(), &"cr".to_string() ),
 			self.trade.unit
 		);
 		
@@ -227,12 +129,10 @@ impl<'a> SearchStation {
 		}
 	}
 	
-	pub fn next_trades(&mut self, iuniverse: &'a IndexedUniverse ) -> Vec<SearchResult<'a>> {
-		let depth = self.search_quality.get_depth();
+	pub fn next_trades(&mut self, universe: &'a Universe, search_cache: &SearchCache ) -> Vec<SearchResult<'a>> {
+		let max_depth = self.search_quality.get_depth();
 		
-		let mut cache = SearchCache::new();
-		
-		let trades = self.next_trades_recurse( iuniverse, &mut cache, depth );
+		let trades = self.next_trades_recurse( &SearchCycleTracker::new(&self.search_quality), universe, search_cache, 0, max_depth );
 		match trades {
 			Some(mut buffer) => {
 				buffer.sort_mut()
@@ -241,9 +141,50 @@ impl<'a> SearchStation {
 		}
 	}
 	
-	fn next_trades_recurse(&self, iuniverse: &'a IndexedUniverse, 
-				mut cache: &mut SearchCache<'a>, depth: usize) -> Option<ScoredCircularBuffer<f64, SearchResult<'a>>> {
-		if depth == 0 {
+	fn new_search_result( &self, cycle_tracker: &SearchCycleTracker, unit_trade: UnitTrade<'a>, 
+		universe: &'a Universe, cache: &SearchCache, depth: usize, max_depth: usize ) -> Option<SearchResult<'a>>{
+		let search_trade_1 = self.new_trade( unit_trade );
+		if !search_trade_1.trade.is_valid {
+			println!("Invalid trade: {}tons - {:?}", search_trade_1.trade.used_cargo, search_trade_1.trade.unit );
+			return None;
+		}
+		
+		let full_trade_1 = search_trade_1.trade;
+		let result_1 = SearchResult::new( full_trade_1 );
+		
+		match cycle_tracker.find_cycle( &result_1.trade, max_depth - depth ) {
+			Some(cycle) => {
+				return Some( result_1.with_cycle(&cycle) )
+			},
+			None => {}
+		}
+		
+		let cycle_tracker = cycle_tracker.push( &result_1.trade );
+		
+		let mut results_2 = match search_trade_1.sell_station.next_trades_recurse( &cycle_tracker, universe, cache, depth + 1, max_depth ) {
+			Some( r ) => r,
+			None => {
+				return Some( result_1 );
+			}
+		};
+		
+		let mut best_score_with_2_buffer = ScoredCircularBuffer::new( 1usize, Sort::Descending );
+		for result_2 in results_2.drain().map(|e| e.value ) {
+			let result_1_with_2 = result_1.with_score( &result_2 );
+			best_score_with_2_buffer.push_scored( result_1_with_2 );
+		}
+		
+		let mut best_1 = best_score_with_2_buffer.sort_mut();
+		let best1_val = best_1.drain(..).next();
+		match best1_val {
+			Some(_) => best1_val,
+			None => Some(result_1)
+		}
+	}
+	
+	fn next_trades_recurse(&self, cycles: &SearchCycleTracker, universe: &'a Universe, 
+				cache: &SearchCache, depth: usize, max_depth: usize) -> Option<ScoredCircularBuffer<f64, SearchResult<'a>>> {
+		if depth >= max_depth {
 			return None;
 		}
 		
@@ -254,39 +195,73 @@ impl<'a> SearchStation {
 		// depth 1 is the next trade, and depth 2 is the trade after that...
 		// we are looking for the best depth 1 trades with the highest score,
 		// including the best depth 2, best depth 3, ... best depth N trades.
-		for unit_trade_1 in cache.get_1hop_trades( iuniverse, &self ) {
-			let search_trade_1 = self.new_trade( unit_trade_1 );
-			if !search_trade_1.trade.is_valid {
-				continue;
-			}
-			
-			let full_trade_1 = search_trade_1.trade;
-			let result_1 = SearchResult::new( full_trade_1.clone() );
-			
-//			if !cache.convergence_check( &result_with_trade, depth ) {
-//				continue;
+//		let mut trades = cache.get_1hop_trades( universe, &self );
+//		
+//		if depth == 0 {
+//			for _ in 0..self.search_quality.get_random_hops() {
+//				// take the worst trade off the buffer
+//				trades.pop();
+//				
+//				// add a random one
+//				match SearchCache::random_1hop_trade(universe, &self.state) {
+//					Some(v) => trades.push(v),
+//					_ => {}
+//				}
 //			}
+//			
+//		}
+
+		let mut trades_1hop = cache.get_1hop_trades( universe, &self );		
+		if depth == 0 {
+			// split the trades into as many chunks are there are cpus
+			let trade_len = trades_1hop.len();
+			let cpus = num_cpus::get();
+			let chunk_size = max(trade_len / cpus, 0)+1;
+			//println!("Grouping into {} sized chunks ({}/{})", chunk_size, trade_len, cpus);
+			let trades_1hop_parts = trades_1hop.chunks( chunk_size );
 			
-			let mut results_2 = match search_trade_1.sell_station.next_trades_recurse( iuniverse, cache, depth - 1 ) {
-				Some( r ) => r,
-				None => { 
-					route_buffer.push_scored( SearchResult::new( full_trade_1 ) );
-					continue;
+			// create a crossbeam scope
+			let mut handles : Vec<crossbeam::ScopedJoinHandle<Vec<SearchResult<'a>>>> = crossbeam::scope(|scope| {
+				let mut handles = Vec::new();
+				
+				// for each chunk, create a thread
+				for trade_slice in trades_1hop_parts {
+					let search_handle = scope.spawn(move ||
+						trade_slice.iter()
+							.map(|trade| self.new_search_result( &cycles, trade.clone(), universe, cache, depth, max_depth  ) )
+							.filter_map(|e| e)
+							.collect()
+					);
+					
+					// save the handle to the list, so we can extract the results later
+					handles.push(search_handle);
 				}
-			};
+				
+				handles
+			});
 			
-			let mut best_score_with_2_buffer = ScoredCircularBuffer::new( 1usize, Sort::Descending );
-			for result_2 in results_2.drain().map(|e| e.value ) {
-				let result_1_with_2 = result_1.with_score( &result_2 );
-				best_score_with_2_buffer.push_scored( result_1_with_2 );
+			// join all the chunk-handles together
+			let options : Vec<SearchResult<'a>> = handles.drain(..)
+				// join all the threads
+				.map(|h| h.join() )
+				// flatten all the sub-iterators, since each handle is for a chunk, not a single trade
+				.flat_map(|e| e)
+				// collect it all!
+				.collect();
+				
+			for option in options {
+				route_buffer.push_scored( option );
 			}
-			
-			let mut best_1 = best_score_with_2_buffer.sort_mut();
-			match best_1.drain().next() {
-				Some(v) => { route_buffer.push_scored(v); },
-				None => {}
-			};
-		}
+		} else {
+			let options : Vec<SearchResult<'a>> = trades_1hop.drain(..)
+				.map(|trade| self.new_search_result( &cycles, trade, universe, cache, depth, max_depth ) )
+				.filter_map(|e| e )
+				.collect();
+				
+			for option in options {
+				route_buffer.push_scored( option );
+			}
+		};
 		
 		if route_buffer.len() > 0 {
 			Some( route_buffer )

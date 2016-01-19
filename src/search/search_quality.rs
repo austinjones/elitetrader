@@ -27,7 +27,12 @@ impl SearchQuality {
 		
 		// lower values have much deeper search areas,
 		// but tend to converge and get stuck in local maxima
-		6usize
+		
+		match *self {
+			SearchQuality::Ultra => 7,
+			SearchQuality::High => 6,
+			SearchQuality::Medium => 5
+		}
 	}
 	
 	pub fn get_depth( &self ) -> usize {
@@ -35,16 +40,21 @@ impl SearchQuality {
 //		
 //		let width = self.get_hop_width();
 //		target_computations.log(width as f64).floor() as usize
-
-		match *self {
-			SearchQuality::Ultra => 9,
-			SearchQuality::High => 8,
-			SearchQuality::Medium => 7
-		}
+		
+		
+		9usize
 	}
 	
+//	pub fn get_random_hops( &self ) -> usize {
+//		match *self {
+//			SearchQuality::Ultra => 4,
+//			SearchQuality::High => 3,
+//			SearchQuality::Medium => 2
+//		}
+//	}
+	
 	pub fn get_trade_range( &self ) -> f64 {
-		100f64
+		70f64
 	}
 }
 
@@ -52,7 +62,7 @@ impl FromStr for SearchQuality {
     type Err = String;
 
     fn from_str(s: &str) -> Result<SearchQuality, String> {
-        match s.to_lowercase().as_str() {
+        match &s.to_lowercase()[..] {
             "m" | "med" => Ok(SearchQuality::Medium),
             "h" | "high" => Ok(SearchQuality::High),
             "u" | "ultra" => Ok(SearchQuality::Ultra),
