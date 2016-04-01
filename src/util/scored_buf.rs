@@ -2,7 +2,7 @@ use std::collections::vec_deque::Drain;
 use std::collections::vec_deque::Iter;
 use std::collections::vec_deque::IterMut;
 use std::collections::VecDeque;
-
+use std::cmp::max;
 use std::fmt::Debug;
 
 pub struct ScoredCircularBuffer<K,V> {
@@ -17,6 +17,15 @@ pub struct ScoredCircularBuffer<K,V> {
 pub enum Sort {
 	Ascending,
 	Descending
+}
+
+impl Sort {
+	pub fn gt<K: PartialOrd<K>, V>(&self, v1: &ScoredItem<K,V>, v2: &ScoredItem<K,V>) -> bool {
+		match *self {
+			Sort::Descending => v1.score > v2.score,
+			Sort::Ascending => v1.score < v2.score
+		}
+	}
 }
 
 pub trait Scored<K> {
@@ -37,36 +46,48 @@ impl<K: PartialOrd<K> + Debug, V:Scored<K>> ScoredCircularBuffer<K,V> {
 	}
 }
 
-impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {	
+
+
+impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 	pub fn push_bucket<F, B:PartialEq<B>>( &mut self, value: V, score: K, bucket_fn: F ) 
 		where F: Fn(&V) -> B {
-		let len = self.deque.len();
-		let new = ScoredItem { score: score, value: value };
 		
-		for _ in 0..len {
-			let compare = self.deque.pop_back().unwrap();
-			
-			if bucket_fn( &compare.value ) == bucket_fn( &new.value ) {
-				let keep = match self.sort {
-					Sort::Descending => new.score < compare.score,
-					Sort::Ascending => new.score > compare.score
-				};
-				
-				if keep {
-//					println!("Compared {:?} to {:?}, keeping #1", compare.score, new.score );
-					self.deque.push_front( compare );
-				} else {
-//					println!("Compared {:?} to {:?}, keeping #2", compare.score, new.score );
-					self.deque.push_front( new );
-				}
-				
-				return;
-			} else {
-				self.deque.push_front(compare);
-			}
+		let scored_item = ScoredItem {
+			score: score,
+			value: value
+		};
+		
+		enum PushBucketAction {
+			Accept,
+			Replace(usize),
+			Discard,
 		}
 		
-		self.push_scored_item(new);
+		let action = match self.deque.iter().enumerate()
+				.find(|&(_, compare)| bucket_fn( &compare.value ) == bucket_fn( &scored_item.value ) ) {
+			Some((index, compare)) => {
+				if self.sort.gt(&scored_item, compare) {
+//					println!("Replacing {:?} with {:?}", compare.score, scored_item.score);
+					PushBucketAction::Replace(index)
+				} else {
+//					println!("Discarding - keep: {:?} and discarding: {:?}", compare.score, scored_item.score);
+					PushBucketAction::Discard
+				}
+			},
+			None => {
+//				println!("Accepting: {:?}", scored_item.score);
+				PushBucketAction::Accept
+			}
+		};
+			
+		match action {
+			PushBucketAction::Accept => self.push_scored_item(scored_item),
+			PushBucketAction::Replace(removal_index) => {
+				self.deque.remove(removal_index);
+				self.push_scored_item(scored_item);
+			},
+			PushBucketAction::Discard => {}
+		}
 	}
 }
 
@@ -75,7 +96,7 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 	pub fn new(size: usize, sort: Sort ) -> ScoredCircularBuffer<K,V> {
 		ScoredCircularBuffer { 
 			size: size, 
-			deque: VecDeque::with_capacity( size ), 
+			deque: VecDeque::with_capacity( size + 1 ), 
 //			rand_factor: None,
 			sort: sort 
 		}
@@ -105,28 +126,37 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 		self.push_scored_item( ScoredItem { score: score, value: value } );
 	}
 	
+	fn insert_index( &self, new: &ScoredItem<K,V> ) -> usize {
+		for (i, compare) in self.deque.iter().enumerate() {
+			if self.sort.gt(compare, &new) {
+				return i;
+			}
+		}
+		
+		// insert after all current items
+		return self.deque.len();
+	}
+	
 	fn push_scored_item( &mut self, new: ScoredItem<K,V> ) {
-		let mut remove = new;
-		let len = self.deque.len();
-		if len < self.size || len == 0 {
-			self.deque.push_front( remove );
+//		println!("push {:?}", &new.score );
+		if self.deque.len() == 0 {
+			self.deque.push_front( new );
+			let scores: Vec<&K> = self.deque.iter().map(|e| &e.score).collect();
+//			println!("\tx> {:?}", scores );
 			return;
 		}
 		
-		for _ in 0..len {
-			let compare = self.deque.pop_back().unwrap();
-			let keep = match self.sort {
-				Sort::Descending => remove.score < compare.score,
-				Sort::Ascending => remove.score > compare.score
-			};
-			
-			if keep {
-				self.deque.push_front( compare );
-			} else {
-				self.deque.push_front( remove );
-				remove = compare;
-			}
+		let insert_index = self.insert_index( &new );
+//		println!("\tinsert at {}", insert_index );
+		self.deque.insert(insert_index, new);
+		
+		if self.deque.len() > self.size {
+			let popped = self.deque.pop_front().unwrap();
+//			println!("\tpopped {:?}", popped.score );
 		}
+		
+		let scores: Vec<&K> = self.deque.iter().map(|e| &e.score).collect();
+//		println!("\t=> {:?}", scores );
 	}
 	
 	pub fn push_opt( &mut self, value: V, score: Option<K> ) {
@@ -171,27 +201,29 @@ impl<K: PartialOrd<K> + Debug, V> ScoredCircularBuffer<K,V> {
 	}
 	
 	pub fn sort( &self ) -> Vec<&V> {
-		let mut sorted: Vec<&ScoredItem<K,V>> = self.iter().collect();
-		
-		match self.sort {
-			Sort::Ascending => sorted.sort_by(|ref a, ref b| a.score.partial_cmp( &b.score ).expect("Failed to compare ScoredCircularBuffer score") ),
-			Sort::Descending => sorted.sort_by(|ref a, ref b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
-		}
-		
-		let result : Vec<&V> = sorted.drain(..).map(|e| &e.value ).collect();
-		result
+//		let mut sorted: Vec<&ScoredItem<K,V>> = self.iter().collect();
+//		
+//		match self.sort {
+//			Sort::Ascending => sorted.sort_by(|ref a, ref b| a.score.partial_cmp( &b.score ).expect("Failed to compare ScoredCircularBuffer score") ),
+//			Sort::Descending => sorted.sort_by(|ref a, ref b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
+//		}
+//		
+//		let result : Vec<&V> = sorted.drain(..).map(|e| &e.value ).collect();
+//		result
+		self.iter().map(|e| &e.value ).rev().collect()
 	}
 
 	pub fn sort_mut( &mut self ) -> Vec<V> {
-		let mut sorted: Vec<ScoredItem<K,V>> = self.drain().collect();
-		
-		match self.sort {
-			Sort::Ascending => sorted.sort_by(|ref a, ref b| a.score.partial_cmp( &b.score ).expect("Failed to compare ScoredCircularBuffer score") ),
-			Sort::Descending => sorted.sort_by(|ref a, ref b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
-		}
-		
-		let result : Vec<V> = sorted.drain(..).map(|e| e.value ).collect();
-		result
+//		let mut sorted: Vec<ScoredItem<K,V>> = self.drain().collect();
+//		
+//		match self.sort {
+//			Sort::Ascending => sorted.sort_by(|ref a, ref b| a.score.partial_cmp( &b.score ).expect("Failed to compare ScoredCircularBuffer score") ),
+//			Sort::Descending => sorted.sort_by(|ref a, ref b| b.score.partial_cmp( &a.score ).expect("Failed to compare ScoredCircularBuffer score") )
+//		}
+//		
+//		let result : Vec<V> = sorted.drain(..).map(|e| e.value ).collect();
+//		result
+		self.drain().map(|e| e.value ).rev().collect()
 	}
 }
 
@@ -247,6 +279,7 @@ mod tests {
 	fn test_sort_desc() {
 		let buffer_desc = new_buffer_desc();
 		let mut desc_sort = buffer_desc.sort();
+		println!("{:?}", desc_sort);
 		let mut desc_sort_iter = desc_sort.drain(..);
 		assert_eq!( desc_sort_iter.next(), Some(&6) );
 		assert_eq!( desc_sort_iter.next(), Some(&5) );
@@ -257,6 +290,7 @@ mod tests {
 	fn test_sort_mut_desc() {
 		let mut buffer_desc = new_buffer_desc();
 		let mut desc_sort = buffer_desc.sort_mut();
+		println!("{:?}", desc_sort);
 		let mut desc_sort_iter = desc_sort.drain(..);
 		assert_eq!( desc_sort_iter.next(), Some(6) );
 		assert_eq!( desc_sort_iter.next(), Some(5) );
