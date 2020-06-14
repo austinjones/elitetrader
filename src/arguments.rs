@@ -1,10 +1,10 @@
 use getopts::{Matches};
-use search::SearchQuality;
-use util::num_unit::*;
-use data::trader::ShipSize;
-use user_input::prompt_value;
+use crate::search::SearchQuality;
+use crate::util::num_unit::*;
+use crate::data::trader::ShipSize;
+use crate::user_input::prompt_value;
 use std::str::FromStr;
-use data::EdceData;
+use crate::data::EdceData;
 
 pub struct Arguments {
 	pub system: Option<String>,
