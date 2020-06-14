@@ -7,7 +7,6 @@ use std::fmt::Formatter;
 use num_cpus;
 
 use rand::{thread_rng, Rng};
-use std::collections::HashSet;
 
 use crate::data::trader::*;
 use crate::data::Universe;
@@ -224,21 +223,6 @@ impl<'a> SearchStation {
         // depth 1 is the next trade, and depth 2 is the trade after that...
         // we are looking for the best depth 1 trades with the highest score,
         // including the best depth 2, best depth 3, ... best depth N trades.
-        //		let mut trades = cache.get_1hop_trades( universe, &self );
-        //
-        //		if depth == 0 {
-        //			for _ in 0..self.search_quality.get_random_hops() {
-        //				// take the worst trade off the buffer
-        //				trades.pop();
-        //
-        //				// add a random one
-        //				match SearchCache::random_1hop_trade(universe, &self.state) {
-        //					Some(v) => trades.push(v),
-        //					_ => {}
-        //				}
-        //			}
-        //
-        //		}
 
         let mut trades_1hop = cache.get_1hop_trades(universe, &self);
         if depth == 0 {
@@ -246,17 +230,16 @@ impl<'a> SearchStation {
             let trade_len = trades_1hop.len();
             let cpus = num_cpus::get();
             let chunk_size = max(trade_len / cpus, 0) + 1;
-            //println!("Grouping into {} sized chunks ({}/{})", chunk_size, trade_len, cpus);
             let trades_1hop_parts = trades_1hop.chunks(chunk_size);
 
             // create a crossbeam scope
-            let mut options: Vec<SearchResult<'a>> = crossbeam::scope(|scope| {
+            let options: Vec<SearchResult<'a>> = crossbeam::scope(|scope| {
                 let mut handles = Vec::new();
 
                 // for each chunk, create a thread
                 for trade_slice in trades_1hop_parts {
                     let search_handle: ScopedJoinHandle<Vec<SearchResult<'a>>> =
-                        scope.spawn(move |scope| {
+                        scope.spawn(move |_scope| {
                             trade_slice
                                 .iter()
                                 .map(|trade| {

@@ -1,32 +1,8 @@
 // todo: delete old universe cachefiles
-//#![feature(custom_derive)]
-//#![feature(collections)]
-//#![feature(core)]
-//#![feature(convert)]
-//#![feature(path_ext)]
-//#![feature(std_misc)]
-//#![feature(fs_time)]
-
-// extern crate core;
-// extern crate crossbeam;
-// extern crate csv;
-// extern crate filetime;
-// extern crate flate2;
-// extern crate getopts;
-// extern crate hyper;
-// extern crate num;
-// extern crate num_cpus;
-// extern crate rand;
-// extern crate rustc_serialize;
-// extern crate spatial;
-// extern crate statistical;
-// extern crate time;
-
 mod arguments;
 mod data;
 mod messages;
 mod persist;
-// mod processor;
 mod search;
 mod user_input;
 mod util;
@@ -45,7 +21,7 @@ use search::PlayerState;
 use search::SearchCache;
 use search::SearchQuality;
 use search::SearchStation;
-use time::{PrimitiveDateTime, Time};
+use time::PrimitiveDateTime;
 use util::num_unit::*;
 
 use user_input::prompt_value;
@@ -154,18 +130,6 @@ fn main() {
 
     let mut universe = Universe::load(&arguments.ship_size);
     let player_state = PlayerState::new(&arguments, &universe);
-    //	let mut system_name = arguments.system;
-    //	let mut system = None;
-    //	while !system.is_some() {
-    //		system = universe.get_system_by_name( &system_name );
-    //
-    //		if !system.is_some() {
-    //			println!( "The system '{}' was not found.  Please try again.", system_name );
-    //			system_name = prompt_value( "corrected station name" );
-    //		}
-    //	}
-    //
-    //	let mut system = system.unwrap().clone();
 
     println!("");
     println!("Universe loaded!");
@@ -307,12 +271,8 @@ fn run_debug(
         let process_end = time::precise_time_s();
 
         let process_time_ms = 1000f64 * (process_end - process_start);
-        //		for (index, result) in trades.iter().enumerate() {
-        //			println!("r{}: {:?}", index, result );
-        //		}
         match trades.iter().next() {
             Some(result) => {
-                //				println!("SearchCache has {} entries", search_cache.trade_cache.len() );
                 let trade = &result.trade;
                 profit_total += trade.profit_total;
                 time_total += trade.unit.normalized_time.time_total;
@@ -332,7 +292,6 @@ fn run_debug(
                     trade.unit.normalized_time.distance_to_station,
                     trade.used_cargo,
                     trade.unit.commodity_name,
-                    //					if trade.unit.sell_station.is_planetary { "planetary" } else { "station" },
                     trade.unit.sell_system.system_name,
                     trade.unit.sell_station.station_name,
                 );
@@ -393,7 +352,6 @@ fn run_search(
     println!("{}", SEPARATOR);
 
     let mut i = 0;
-    //	let mut last_trade : Option<(u32, f64, PreciseTime)> = None;
 
     let mut sum_profit = 0;
     let mut sum_minutes = 0f64;
@@ -405,23 +363,14 @@ fn run_search(
 
     let search_cache = SearchCache::new();
 
-    //	let mut price_updates = Vec::new();
     let mut quit = false;
     'route: while !quit {
-        //		let search_quality = match i {
-        //			0 => SearchQuality::Medium,
-        //			_ => search_quality
-        //		};
-
         println!("wait:\tcalculating ...");
 
         let universe_snapshot = universe.snapshot();
 
         let mut search = SearchStation::new(player_state.clone(), search_quality);
         let mut results = search.next_trades(&universe_snapshot, &search_cache);
-        //		for (index, result) in results.iter().enumerate() {
-        //			println!("r{}: {:?}", index, result );
-        //		}
 
         let mut accepted_trade = None;
 
@@ -526,10 +475,6 @@ fn run_search(
                 // so calculate it automatically
                 let str = user_input::read_line();
                 match &str[..] {
-                    //					"u" | "update" => {
-                    //						let new_price = read_price_update();
-                    //						price_updates.push( PriceUpdate::new_sell_update( new_price, trade.sell ) );
-                    //					},
                     "u" | "update" => {
                         let buy_price = user_input::read_price_update("buy price");
                         let supply = user_input::read_price_update("supply");
@@ -660,9 +605,6 @@ fn run_search(
             100f64 * minutes / (trade_snapshot.unit.adjusted_time.time_total / 60f64),
             minutes
         );
-        // 159% of expected - 70.2 Kcr profit/min from trade
-        // 129% of expected - 1.4 Kcr profit per ton
-        // 75% of expected - 7.2 mins travel time
 
         match TimeAdjustment::new(&trade, seconds) {
             Some(adjustment) => {

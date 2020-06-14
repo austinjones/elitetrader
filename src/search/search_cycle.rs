@@ -1,26 +1,6 @@
-use std::fmt::Debug;
-use std::fmt::Error;
-use std::fmt::Formatter;
-
-use crossbeam;
-use num_cpus;
-
-use rand::{thread_rng, Rng};
-use std::collections::HashSet;
-
-use crate::data::trader::*;
-use crate::data::Universe;
-
 use crate::search::full_trade::FullTrade;
-use crate::search::player_state::PlayerState;
-use crate::search::search_cache::SearchCache;
+
 use crate::search::search_quality::SearchQuality;
-use crate::search::unit_trade::UnitTrade;
-
-use crate::util::num_unit::NumericUnit;
-use crate::util::scored_buf::*;
-
-use std::cmp::*;
 
 #[derive(Clone)]
 pub struct SearchCycleTracker {
@@ -55,7 +35,6 @@ impl SearchCycleTracker {
             time_total += elem.time_total;
 
             if elem.buy_station_id == trade.unit.buy.station_id {
-                //println!("Already visited station {} - aborting route", &search_trade_1.trade.unit.sell_station.station_name );
                 return Some(SearchCycle {
                     profit_total: ((depth_remaining as f64 / cycle_length as f64)
                         * profit_total as f64) as u32,

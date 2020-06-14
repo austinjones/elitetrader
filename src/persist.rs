@@ -1,4 +1,4 @@
-use csv::{self, Reader, ReaderBuilder};
+use csv::{self, Reader};
 
 use std::fs::create_dir_all;
 use std::fs::File;
@@ -9,11 +9,8 @@ use std::path::PathBuf;
 
 use std::env::home_dir;
 
-use flate2::read::GzDecoder;
-
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::time::Duration;
 
 pub fn get_base_directory() -> PathBuf {
     match home_dir() {
@@ -31,12 +28,10 @@ pub fn get_base_directory() -> PathBuf {
 
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> T {
     let mut file = File::open(path).unwrap();
-    //	println!("Reading file {}", path.to_str().unwrap() );
 
     let mut s = String::new();
     file.read_to_string(&mut s).unwrap();
 
-    //	println!("Decoding file {}", path.to_str().unwrap() );
     match serde_json::from_str(&s) {
         Ok(result) => result,
         Err(reason) => panic!(
@@ -61,7 +56,6 @@ where
     let mut s = String::new();
     file.read_to_string(&mut s).unwrap();
 
-    //	println!("Decoding file {}", path.to_str().unwrap() );
     match serde_json::from_str(&s) {
         Ok(result) => result,
         Err(reason) => panic!("Failed to parse file, reason: {}", reason),
@@ -81,12 +75,9 @@ where
         ),
     };
 
-    //	println!("Encoding file {}", path.to_str().unwrap() );
-
     let string = serde_json::to_string(data).unwrap();
     let bytes: &[u8] = string.as_bytes();
 
-    //	println!("Writing file {}", path.to_str().unwrap() );
     match file.write_all(bytes) {
         Err(reason) => panic!(
             "Failed to write file {}, reason: {}",

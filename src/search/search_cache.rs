@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
-use rand::{prelude::SliceRandom, thread_rng, Rng};
+use rand::{prelude::SliceRandom, thread_rng};
 
 use crate::data::trader::*;
 use crate::data::Universe;
@@ -76,38 +76,9 @@ impl SearchCache {
     pub fn new() -> SearchCache {
         SearchCache {
             trade_cache: RwLock::new(HashMap::new()),
-            sell_lookup: RwLock::new(HashMap::new()), //			convergence_filter: VecMap::with_capacity(MAX_DEPTH)
+            sell_lookup: RwLock::new(HashMap::new()),
         }
     }
-
-    //	pub fn convergence_check( &mut self, result: &SearchResult<'a>, depth: usize ) -> bool {
-    //		match self.convergence_filter.get( &depth ) {
-    //			None => {
-    //				let map = HashMap::new();
-    //				self.convergence_filter.insert(depth, map);
-    //			}
-    //			_ => {}
-    //		};
-    //
-    //		let depthmap = match self.convergence_filter.get_mut( &depth ) {
-    //			Some(m) => m,
-    //			None => panic!("Should have created a depth map in convergence_filter")
-    //		};
-    //
-    //		let sell_station_id = result.trade.unit.sell_station.station_id as usize;
-    //		let score = result.profit_total as f64 / result.distance_in_seconds;
-    //
-    //		let is_better = match depthmap.get( &sell_station_id ) {
-    //			Some(best) => *best < score,
-    //			None => true
-    //		};
-    //
-    //		if is_better {
-    //			depthmap.insert( sell_station_id, score );
-    //		}
-    //
-    //		is_better
-    //	}
 
     fn update_sell_lookup(&self, trades: &Vec<UnitTrade>) {
         let mut lookup = self.sell_lookup.write().unwrap();
@@ -134,7 +105,7 @@ impl SearchCache {
         self.trade_cache.write().unwrap().remove(&station_id);
         let mut sell_lookup = self.sell_lookup.write().unwrap();
         match sell_lookup.get_mut(&station_id) {
-            Some(mut entries) => {
+            Some(entries) => {
                 for buy_station_id in entries.drain() {
                     self.trade_cache.write().unwrap().remove(&buy_station_id);
                 }

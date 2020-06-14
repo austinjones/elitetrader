@@ -1,4 +1,4 @@
-use std::fmt::Error;
+
 
 use crate::data::trader::*;
 use crate::search::player_state::PlayerState;
@@ -144,7 +144,7 @@ impl TimeEstimate {
     pub fn adjusted_time_to_system(
         distance_to_system: f64,
         jump_range: f64,
-        adjustment_factor: f64,
+        _adjustment_factor: f64,
     ) -> f64 {
         BUY_TIME + UNDOCK_TIME + Self::jump_time(distance_to_system, jump_range)
     }

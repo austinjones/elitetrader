@@ -7,7 +7,6 @@ use crate::data::universe::Universe;
 use serde::Deserialize;
 use serde::Serialize;
 use std::process::Command;
-use time;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EdceData {
@@ -41,22 +40,6 @@ impl EdceData {
 
     fn read(basePath: &String) -> Option<EdceData> {
         let jsonPath = String::new() + basePath + "/last.json";
-        //		let timePath = String::new() + basePath + "/last.time";
-
-        //		match File::open(&timePath) {
-        //			Ok(mut f) => {
-        //				let text = persist::read_text_from_file( &mut f );
-        //				match text.parse::<i64>() {
-        //					Ok(epoch) => {
-        //						let now = time::now().to_timespec().sec;
-        //						let diff = now - epoch;
-        //						println!("EDCE data loaded {} seconds ago", diff);
-        //					},
-        //					_ => {}
-        //				}
-        //			},
-        //			_ => {}
-        //		};
 
         match File::open(&jsonPath) {
             Ok(mut f) => persist::read_json_from_file(&mut f),
@@ -76,11 +59,11 @@ impl EdceData {
     ) -> Option<EdceStationUpdate> {
         let mut updates = Vec::new();
 
-        let system_name = self.lastSystem.name.to_lowercase();
-        let station_name = self.lastStarport.name.to_lowercase();
+        let _system_name = self.lastSystem.name.to_lowercase();
+        let _station_name = self.lastStarport.name.to_lowercase();
         let commodities = &self.lastStarport.commodities;
 
-        if let Some(mut station) =
+        if let Some(station) =
             universe.get_station_by_name_mut(&self.lastSystem.name, &self.lastStarport.name)
         {
             'listing: for listing in station.listings.iter_mut() {
@@ -99,10 +82,6 @@ impl EdceData {
                         || sell_price_delta.abs() > 0
                         || supply_delta.abs() > 0
                     {
-                        //println!("Created adjustment from EDCE data: {}, buy: {}, sell: {}, suppy: {}",
-                        //	listing.commodity.commodity_name,
-                        //	buy_price_delta, sell_price_delta, supply_delta );
-
                         let listing_old = listing.clone();
 
                         listing.buy_price = commodity.buyPrice;

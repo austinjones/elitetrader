@@ -101,7 +101,7 @@ pub fn get_stations_by_system(stations: &Vec<StationJson>) -> HashMap<u32, Vec<&
             _ => {}
         };
 
-        let mut vec = match result.get_mut(&s.system_id) {
+        let vec = match result.get_mut(&s.system_id) {
             Some(vbox) => vbox,
             None => panic!("Should have been inserted above"),
         };
@@ -125,7 +125,7 @@ pub fn get_listings_by_station(
             _ => {}
         };
 
-        let mut vec = match result.get_mut(&s.station_id) {
+        let vec = match result.get_mut(&s.station_id) {
             Some(vbox) => vbox,
             None => panic!("Should have been inserted above"),
         };

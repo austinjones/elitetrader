@@ -7,9 +7,8 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use time::Duration;
-use time::{PrimitiveDateTime, Time};
+use time::PrimitiveDateTime;
 
-use crate::data::edce::EdceData;
 use crate::data::eddb::*;
 use crate::data::price_adjustment::PriceAdjustment;
 use crate::data::time_adjustment::TimeAdjustment;
@@ -34,7 +33,6 @@ fn get_cachefile_loc() -> PathBuf {
 
 pub struct Universe {
     pub systems: Vec<System>,
-    //	pub time_adjustments: HashMap<u32, ScoredCircularBuffer<u64, TimeAdjustment>>
     pub time_adjustments: ScoredCircularBuffer<u64, TimeAdjustment>,
 
     pub index: UniverseIndex,
@@ -108,7 +106,7 @@ impl Universe {
     }
 
     pub fn apply_trade(&mut self, trade: &FullTrade, cache: &SearchCache) {
-        if let Some(mut station) = self.get_station_mut(trade.unit.buy.station_id) {
+        if let Some(station) = self.get_station_mut(trade.unit.buy.station_id) {
             for listing in station.listings.iter_mut() {
                 if listing.commodity.commodity_id == trade.unit.commodity_id {
                     listing.supply = listing.supply - trade.used_cargo;
@@ -316,7 +314,7 @@ impl Universe {
     }
 
     fn filter_systems(mut systems: Vec<System>, ship_size: &ShipSize) -> Vec<System> {
-        let illegal_categories = ["drugs", "weapons", "slavery"];
+        let _illegal_categories = ["drugs", "weapons", "slavery"];
         let mut systems: Vec<System> = systems.drain(..).filter(|e| !e.needs_permit).collect();
 
         for mut system in &mut systems {
@@ -374,7 +372,7 @@ impl Universe {
     }
 
     pub fn apply_price_adjustment(&mut self, price: &PriceAdjustment) {
-        if let Some(mut station) = self.get_station_mut(price.station_id) {
+        if let Some(station) = self.get_station_mut(price.station_id) {
             for listing in station.listings.iter_mut() {
                 if price.commodity_id != listing.commodity.commodity_id {
                     continue;
@@ -609,7 +607,7 @@ impl Universe {
     ) -> Option<&mut Station> {
         let index = self.index.get_index_system_by_name(system_name);
         match self.get_system_by_index_mut(index) {
-            Some(mut system) => system
+            Some(system) => system
                 .stations
                 .iter_mut()
                 .filter(|e| &e.station_name == station_name)

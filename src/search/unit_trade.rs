@@ -35,8 +35,6 @@ pub struct UnitTrade<'a> {
     pub adjusted_time: TimeEstimate,
 }
 
-// actual trait impl
-#[allow(dead_code)]
 impl<'b> UnitTrade<'b> {
     pub fn new(
         universe: &'b Universe,
@@ -89,9 +87,6 @@ impl<'b> UnitTrade<'b> {
 
         let profit_per_ton_per_min =
             UnitTrade::profit_per_ton_per_min(&buy, &sell, adjusted_time.time_total);
-        //		println!( "Using {} of {}, profit/ton {}, profit total {}, profit/min {} over {}sec",
-        //			used_cargo, buy.commodity.commodity_name,
-        //			profit_per_ton, profit_total, profit_per_min.unwrap_or(0f64), cost_in_seconds );
 
         UnitTrade {
             commodity_id: buy.commodity.commodity_id.clone(),
@@ -140,7 +135,6 @@ impl<'b> UnitTrade<'b> {
     }
 }
 
-// static methods
 impl<'b> UnitTrade<'b> {
     pub fn profit_per_ton(buy: &Listing, sell: &Listing) -> u32 {
         if sell.sell_price > buy.buy_price {
